@@ -39,6 +39,10 @@ RELATIONSHIP_CANDIDATES_TABLE_NAME = "warehouse_relationship_candidates"
 RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME = "warehouse_relationship_candidate_jobs"
 RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME = "warehouse_relationship_candidate_scores"
 RELATIONSHIP_SCORING_JOBS_TABLE_NAME = "warehouse_relationship_scoring_jobs"
+RELATIONSHIP_REVIEWS_TABLE_NAME = "warehouse_relationship_reviews"
+RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME = "warehouse_relationship_review_candidates"
+RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME = "warehouse_relationship_cardinality_estimates"
+RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME = "warehouse_relationship_cardinality_jobs"
 MASK_VALUE = "••••••••"
 PROFILE_JOB_STATUSES = {
     "queued",
@@ -79,6 +83,10 @@ INTERNAL_TABLES = {
     RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME,
     RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME,
     RELATIONSHIP_SCORING_JOBS_TABLE_NAME,
+    RELATIONSHIP_REVIEWS_TABLE_NAME,
+    RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME,
+    RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME,
+    RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME,
 }
 
 
@@ -2517,6 +2525,254 @@ def get_all_table_summaries():
         get_table_summary(table_name)
         for table_name in get_all_tables()
     ]
+
+
+def drop_warehouse_table(table_name: str):
+    """Drop satu tabel warehouse beserta metadata yang bergantung padanya.
+
+    Job history relationship intelligence tetap dipertahankan sebagai audit
+    history. Metadata yang mereferensikan tabel/relationship/candidate secara
+    langsung dibersihkan dalam transaksi yang sama dengan DROP TABLE.
+    """
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+
+    if not table_exists(table_name):
+        raise ValueError(
+            f"Tabel '{table_name}' tidak ditemukan."
+        )
+
+    summary = get_table_summary(table_name)
+    preparer = engine.dialect.identifier_preparer
+    quoted_table = preparer.quote(table_name)
+
+    removed = {
+        "relationships": 0,
+        "relationship_columns": 0,
+        "relationship_candidates": 0,
+        "relationship_candidate_scores": 0,
+        "relationship_cardinality_estimates": 0,
+        "relationship_reviews": 0,
+        "relationship_review_candidates": 0,
+        "column_profiles": 0,
+        "profile_jobs": 0,
+        "column_settings": 0,
+        "schema_mapping": 0,
+        "table_state": 0,
+    }
+
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtext(:lock_key))"
+                ),
+                {"lock_key": f"drop_table:{table_name}"},
+            )
+
+        inspector = inspect(connection)
+        if not inspector.has_table(table_name):
+            raise ValueError(
+                f"Tabel '{table_name}' tidak ditemukan."
+            )
+
+        active_profile_job = connection.execute(
+            select(profile_jobs_table.c.id)
+            .where(
+                profile_jobs_table.c.table_name == table_name,
+                profile_jobs_table.c.status.in_(["queued", "running"]),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if active_profile_job is not None:
+            raise ValueError(
+                f"Tabel '{table_name}' sedang memiliki profiling job aktif. "
+                "Tunggu job selesai sebelum menghapus tabel."
+            )
+
+        relationship_ids = list(
+            connection.execute(
+                select(relationships_table.c.id).where(
+                    or_(
+                        relationships_table.c.source_table == table_name,
+                        relationships_table.c.target_table == table_name,
+                    )
+                )
+            ).scalars().all()
+        )
+
+        candidate_ids = list(
+            connection.execute(
+                select(relationship_candidates_table.c.id).where(
+                    or_(
+                        relationship_candidates_table.c.source_table == table_name,
+                        relationship_candidates_table.c.target_table == table_name,
+                    )
+                )
+            ).scalars().all()
+        )
+
+        optional_metadata = MetaData()
+
+        def reflect_optional(name: str):
+            if not inspector.has_table(name):
+                return None
+            return Table(
+                name,
+                optional_metadata,
+                autoload_with=connection,
+            )
+
+        review_candidates = reflect_optional(
+            RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME
+        )
+        reviews = reflect_optional(
+            RELATIONSHIP_REVIEWS_TABLE_NAME
+        )
+        cardinality_estimates = reflect_optional(
+            RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME
+        )
+
+        review_ids = set()
+
+        if review_candidates is not None and candidate_ids:
+            review_ids.update(
+                connection.execute(
+                    select(review_candidates.c.review_id).where(
+                        review_candidates.c.candidate_id.in_(candidate_ids)
+                    )
+                ).scalars().all()
+            )
+
+        if reviews is not None and relationship_ids:
+            review_ids.update(
+                connection.execute(
+                    select(reviews.c.id).where(
+                        or_(
+                            reviews.c.promoted_relationship_id.in_(relationship_ids),
+                            reviews.c.subject_relationship_id.in_(relationship_ids),
+                        )
+                    )
+                ).scalars().all()
+            )
+
+        if review_candidates is not None:
+            review_filters = []
+            if candidate_ids:
+                review_filters.append(
+                    review_candidates.c.candidate_id.in_(candidate_ids)
+                )
+            if review_ids:
+                review_filters.append(
+                    review_candidates.c.review_id.in_(list(review_ids))
+                )
+
+            if review_filters:
+                result = connection.execute(
+                    review_candidates.delete().where(
+                        or_(*review_filters)
+                    )
+                )
+                removed["relationship_review_candidates"] = int(
+                    result.rowcount or 0
+                )
+
+        if reviews is not None and review_ids:
+            result = connection.execute(
+                reviews.delete().where(
+                    reviews.c.id.in_(list(review_ids))
+                )
+            )
+            removed["relationship_reviews"] = int(
+                result.rowcount or 0
+            )
+
+        if cardinality_estimates is not None and candidate_ids:
+            result = connection.execute(
+                cardinality_estimates.delete().where(
+                    cardinality_estimates.c.candidate_id.in_(candidate_ids)
+                )
+            )
+            removed["relationship_cardinality_estimates"] = int(
+                result.rowcount or 0
+            )
+
+        if candidate_ids:
+            result = connection.execute(
+                relationship_candidate_scores_table.delete().where(
+                    relationship_candidate_scores_table.c.candidate_id.in_(
+                        candidate_ids
+                    )
+                )
+            )
+            removed["relationship_candidate_scores"] = int(
+                result.rowcount or 0
+            )
+
+        result = connection.execute(
+            relationship_candidates_table.delete().where(
+                or_(
+                    relationship_candidates_table.c.source_table == table_name,
+                    relationship_candidates_table.c.target_table == table_name,
+                )
+            )
+        )
+        removed["relationship_candidates"] = int(
+            result.rowcount or 0
+        )
+
+        if relationship_ids:
+            result = connection.execute(
+                relationship_columns_table.delete().where(
+                    relationship_columns_table.c.relationship_id.in_(
+                        relationship_ids
+                    )
+                )
+            )
+            removed["relationship_columns"] = int(
+                result.rowcount or 0
+            )
+
+        result = connection.execute(
+            relationships_table.delete().where(
+                or_(
+                    relationships_table.c.source_table == table_name,
+                    relationships_table.c.target_table == table_name,
+                )
+            )
+        )
+        removed["relationships"] = int(result.rowcount or 0)
+
+        for key, metadata_table in (
+            ("column_profiles", column_profiles_table),
+            ("profile_jobs", profile_jobs_table),
+            ("column_settings", column_settings_table),
+            ("schema_mapping", schema_mapping_table),
+            ("table_state", table_state_table),
+        ):
+            result = connection.execute(
+                metadata_table.delete().where(
+                    metadata_table.c.table_name == table_name
+                )
+            )
+            removed[key] = int(result.rowcount or 0)
+
+        # PostgreSQL DDL bersifat transactional. Jika DROP gagal karena
+        # dependency database lain (mis. view), seluruh cleanup di atas
+        # ikut rollback sehingga metadata tidak menjadi setengah terhapus.
+        connection.execute(
+            text(f"DROP TABLE {quoted_table}")
+        )
+
+    return {
+        "table_name": table_name,
+        "deleted": True,
+        "row_count": int(summary.get("row_count") or 0),
+        "column_count": int(summary.get("column_count") or 0),
+        "metadata_removed": removed,
+    }
 
 
 def get_table_column_details(table_name: str):

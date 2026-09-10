@@ -194,6 +194,16 @@ export async function getTableDetail(tableName) {
   );
 }
 
+export async function deleteWarehouseTable(tableName) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}`,
+    {
+      method: "DELETE",
+    },
+    "Gagal menghapus tabel"
+  );
+}
+
 export async function renameTableColumn({
   tableName,
   oldName,

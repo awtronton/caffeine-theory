@@ -16,12 +16,15 @@ import {
   RefreshCw,
   Search,
   Table2,
+  Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 
 import DashboardLayout from '../layouts/DashboardLayout'
 import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import {
+  deleteWarehouseTable,
   getTableDetail,
   getTableSummaries,
   renameTableColumn,
@@ -67,6 +70,9 @@ function DataTables() {
   const [renameLoading, setRenameLoading] = useState(false)
   const [maskingColumn, setMaskingColumn] = useState('')
   const [message, setMessage] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteConfirmValue, setDeleteConfirmValue] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const filteredTables = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -288,6 +294,70 @@ function DataTables() {
     }
   }
 
+  function openDeleteTable() {
+    if (!selectedTable || !detail?.summary) return
+
+    setDeleteTarget({
+      ...detail.summary,
+      table_name: selectedTable,
+    })
+    setDeleteConfirmValue('')
+    setMessage('')
+  }
+
+  function closeDeleteTable() {
+    if (deleteLoading) return
+
+    setDeleteTarget(null)
+    setDeleteConfirmValue('')
+  }
+
+  async function confirmDeleteTable() {
+    if (!deleteTarget) return
+
+    const targetName = deleteTarget.table_name
+
+    if (deleteConfirmValue.trim() !== targetName) {
+      return
+    }
+
+    try {
+      setDeleteLoading(true)
+      setMessage('')
+
+      const result = await deleteWarehouseTable(targetName)
+      const removedRelationships = Number(
+        result?.metadata_removed?.relationships || 0,
+      )
+
+      setDeleteTarget(null)
+      setDeleteConfirmValue('')
+      setSelectedTable('')
+      setDetail(null)
+
+      await loadTables({
+        preserveSelection: false,
+      })
+
+      setMessage(
+        `Tabel '${targetName}' berhasil dihapus permanen. ` +
+          `${formatNumber(result?.row_count || 0)} baris dan ` +
+          `${formatNumber(result?.column_count || 0)} kolom dihapus` +
+          (removedRelationships > 0
+            ? ` bersama ${formatNumber(removedRelationships)} relationship terkait.`
+            : '.'),
+      )
+    } catch (error) {
+      console.error(error)
+      setMessage(
+        error.message ||
+          `Gagal menghapus tabel '${targetName}'.`,
+      )
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   return (
     <DashboardLayout>
       <main className="tp-data-tables mx-auto w-full max-w-[1480px] space-y-5">
@@ -469,7 +539,20 @@ function DataTables() {
                 </p>
               </div>
 
-              <Columns3 size={20} />
+              <div className="tp-column-review-actions">
+                <button
+                  type="button"
+                  className="tp-delete-table-trigger"
+                  onClick={openDeleteTable}
+                  disabled={!selectedTable || detailLoading}
+                  title="Hapus tabel permanen"
+                >
+                  <Trash2 size={13} />
+                  <span>Drop table</span>
+                </button>
+
+                <Columns3 size={20} />
+              </div>
             </div>
 
             {detail?.summary && (
@@ -750,6 +833,117 @@ function DataTables() {
             </div>
           </aside>
         </section>
+
+        {deleteTarget && (
+          <div
+            className="tp-delete-modal-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeDeleteTable()
+              }
+            }}
+          >
+            <div
+              className="tp-delete-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tp-delete-table-title"
+            >
+              <div className="tp-delete-modal-icon">
+                <TriangleAlert size={20} />
+              </div>
+
+              <div className="tp-delete-modal-content">
+                <h2 id="tp-delete-table-title">
+                  Hapus tabel secara permanen?
+                </h2>
+
+                <p>
+                  Tabel PostgreSQL dan metadata yang terkait akan
+                  dihapus. Relationship, profile, schema mapping,
+                  dan pengaturan masking yang mereferensikan tabel
+                  ini juga akan dibersihkan.
+                </p>
+
+                <div className="tp-delete-table-summary">
+                  <div>
+                    <span>Table</span>
+                    <strong>{deleteTarget.table_name}</strong>
+                  </div>
+                  <div>
+                    <span>Rows</span>
+                    <strong>
+                      {formatNumber(deleteTarget.row_count)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Columns</span>
+                    <strong>
+                      {formatNumber(deleteTarget.column_count)}
+                    </strong>
+                  </div>
+                </div>
+
+                <label className="tp-delete-confirm-field">
+                  <span>
+                    Ketik <strong>{deleteTarget.table_name}</strong>{' '}
+                    untuk mengonfirmasi.
+                  </span>
+                  <input
+                    autoFocus
+                    value={deleteConfirmValue}
+                    onChange={(event) =>
+                      setDeleteConfirmValue(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === 'Enter' &&
+                        deleteConfirmValue.trim() ===
+                          deleteTarget.table_name &&
+                        !deleteLoading
+                      ) {
+                        confirmDeleteTable()
+                      }
+
+                      if (event.key === 'Escape') {
+                        closeDeleteTable()
+                      }
+                    }}
+                    placeholder={deleteTarget.table_name}
+                  />
+                </label>
+
+                <div className="tp-delete-modal-actions">
+                  <button
+                    type="button"
+                    className="tp-delete-cancel-button"
+                    onClick={closeDeleteTable}
+                    disabled={deleteLoading}
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    type="button"
+                    className="tp-delete-confirm-button"
+                    onClick={confirmDeleteTable}
+                    disabled={
+                      deleteLoading ||
+                      deleteConfirmValue.trim() !==
+                        deleteTarget.table_name
+                    }
+                  >
+                    <Trash2 size={14} />
+                    {deleteLoading
+                      ? 'Menghapus...'
+                      : 'Drop table permanen'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </DashboardLayout>
   )

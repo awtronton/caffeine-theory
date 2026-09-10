@@ -126,9 +126,7 @@
   background: var(--tp-shell-bg);
 }
 
-.vibe-shell-workspace-switcher.is-collapsed {
-  justify-content: center;
-}
+
 
 .vibe-shell-workspace-mark {
   display: grid;
@@ -702,4 +700,440 @@
   .vibe-shell-frozen-page-meta {
     display: none;
   }
+}
+
+
+/* =========================================================
+   Caffeine Theory Branding Final Adjustment
+   ========================================================= */
+
+/*
+   Brand logo
+   Keep original PNG appearance without card/background.
+*/
+.vibe-shell-brand-mark {
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+/*
+   Caffeine Theory wordmark
+   Inspired by monday.com:
+   Caffeine = bold large
+   theory   = smaller light
+*/
+.vibe-shell-brand-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.vibe-shell-brand-wordmark .brand-primary {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  color: #1f2937;
+}
+
+.vibe-shell-brand-wordmark .brand-secondary {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 200;
+  letter-spacing: -0.045em;
+  color: #6b7280;
+}
+
+/*
+   Keep brand alignment consistent.
+*/
+.vibe-shell-brand {
+  align-items: center;
+}
+
+/*
+   Page title breathing space.
+   Only affects page title area, not topbar actions.
+*/
+.vibe-shell-frozen-page-copy {
+  padding-left: 32px;
+}
+
+/*
+   Prevent title container shrinking unexpectedly
+   during sidebar collapse.
+*/
+.vibe-shell-frozen-page {
+  flex-shrink: 0;
+}
+
+/*
+   Collapsed sidebar:
+   logo remains centered.
+   Text visibility is controlled by React state.
+*/
+.vibe-shell-sidebar--collapsed .vibe-shell-brand {
+  justify-content: center;
+}
+
+.vibe-shell-sidebar--collapsed .vibe-shell-brand-mark {
+  margin: 0 auto;
+}
+
+
+/* =========================================================
+   Caffeine Theory - collapsed sidebar brand fix
+   ========================================================= */
+
+/*
+   Keep brand visible when sidebar collapses.
+   The brand floats above the collapsed sidebar width
+   so it does not collide with page title.
+*/
+
+/* =========================================================
+   Caffeine Theory - remove page title from topbar
+   ========================================================= */
+
+.vibe-shell-frozen-page-copy,
+.vibe-shell-frozen-page-title,
+.vibe-shell-frozen-page-meta {
+  display: none;
+}
+
+.vibe-shell-frozen-page {
+  padding-left: 0;
+}
+
+
+/* =========================================================
+   Caffeine Theory - logo alignment final tweak
+   ========================================================= */
+
+.vibe-shell-brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vibe-shell-brand-logo {
+  transform: translateY(-4px);
+  transform-origin: center;
+}
+
+
+/* =========================================================
+   Caffeine Theory - fixed brand alignment
+   ========================================================= */
+
+.vibe-shell-brand {
+  position: relative;
+  display: flex;
+  height: var(--tp-shell-topbar-height);
+  align-items: center;
+  gap: 0;
+  padding-left: 14px;
+  overflow: visible;
+}
+
+.vibe-shell-brand-mark {
+  display: flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.vibe-shell-brand-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  transform: translateY(-2px);
+}
+
+.vibe-shell-brand-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.vibe-shell-sidebar--collapsed .vibe-shell-brand {
+  width: 252px;
+  padding-left: 14px;
+}
+
+.vibe-shell-sidebar--collapsed .vibe-shell-brand-wordmark {
+  display: flex;
+}
+
+.vibe-shell-sidebar--collapsed .vibe-shell-brand-mark {
+  margin: 0;
+}
+
+/* =========================================================
+   Caffeine Theory - Fixed brand position
+   Position mengikuti sidebar collapsed state
+   ========================================================= */
+
+.vibe-shell-brand-fixed {
+  position: relative;
+  height: var(--tp-shell-topbar-height);
+  width: var(--tp-shell-sidebar-collapsed);
+  min-width: var(--tp-shell-sidebar-collapsed);
+  padding-left: 14px;
+  padding-right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow: visible;
+}
+
+/* Logo */
+.vibe-shell-brand-mark {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.vibe-shell-brand-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  transform: translateY(-2px);
+}
+
+
+/* Wordmark tetap di kanan logo */
+.vibe-shell-brand-wordmark {
+  position: absolute;
+  left: 58px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  white-space: nowrap;
+}
+
+
+/* Saat sidebar expand jangan geser */
+.vibe-shell-sidebar:not(.vibe-shell-sidebar--collapsed)
+  .vibe-shell-brand-fixed {
+  width: var(--tp-shell-sidebar-collapsed);
+}
+
+
+/* Saat sidebar collapse tetap sama */
+.vibe-shell-sidebar--collapsed
+  .vibe-shell-brand-fixed {
+  width: var(--tp-shell-sidebar-collapsed);
+}
+
+
+/* Monday style */
+.vibe-shell-brand-wordmark .brand-primary {
+  font-size: 27px;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.vibe-shell-brand-wordmark .brand-secondary {
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+/* =========================================================
+   Caffeine Theory - lock logo position on collapsed sidebar
+   Keep expanded sidebar position unchanged
+   ========================================================= */
+
+/* collapsed only */
+.vibe-shell-sidebar--collapsed .vibe-shell-brand-mark {
+  position: relative;
+  left: 0;
+  margin-left: 0;
+  transform: translateY(-2px);
+}
+
+/* prevent old collapsed centering */
+.vibe-shell-sidebar--collapsed .vibe-shell-brand {
+  justify-content: flex-start;
+  padding-left: 14px;
+}
+
+/* keep logo dimension identical */
+.vibe-shell-sidebar--collapsed .vibe-shell-brand-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+/* =========================================================
+   Caffeine Theory final layout
+   Brand lives in topbar, not sidebar
+   ========================================================= */
+
+.vibe-shell-topbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: var(--tp-shell-sidebar-width);
+  height: var(--tp-shell-topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--tp-shell-surface);
+  z-index: 40;
+}
+
+.vibe-shell-sidebar {
+  top: var(--tp-shell-topbar-height);
+  height: calc(100vh - var(--tp-shell-topbar-height));
+}
+
+.vibe-shell-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 20px;
+  flex-shrink: 0;
+}
+
+.vibe-shell-header-brand-logo,
+.vibe-shell-header-brand-logo img {
+  width: 40px;
+  height: 40px;
+}
+
+.vibe-shell-header-brand-logo img {
+  object-fit: contain;
+}
+
+.vibe-shell-header-brand-wordmark {
+  display: flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.vibe-shell-header-brand-wordmark .brand-primary {
+  font-size: 27px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -0.055em;
+}
+
+.vibe-shell-header-brand-wordmark .brand-secondary {
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+/* Hide legacy sidebar branding */
+.vibe-shell-sidebar .vibe-shell-brand {
+  display: none;
+}
+
+/* Remove workspace selector */
+.vibe-shell-workspace-switcher {
+  display: none;
+}
+
+.vibe-shell-main {
+  padding-top: var(--tp-shell-topbar-height);
+}
+
+
+/* =========================================================
+   Caffeine Theory Final Shell Override
+   Brand fixed in topbar, independent from sidebar state
+   ========================================================= */
+
+.vibe-shell-topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--tp-shell-topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: var(--tp-shell-surface);
+  z-index: 40;
+  padding: 0 20px;
+}
+
+.vibe-shell-header-brand {
+  position: fixed;
+  top: 0;
+  left: 24px;
+  height: var(--tp-shell-topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 60;
+  white-space: nowrap;
+}
+
+.vibe-shell-header-brand-logo,
+.vibe-shell-header-brand-logo img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.vibe-shell-header-brand-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.vibe-shell-header-brand-wordmark .brand-primary {
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  color: #1f2937;
+}
+
+.vibe-shell-header-brand-wordmark .brand-secondary {
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  color: #6b7280;
+}
+
+.vibe-shell-sidebar {
+  top: var(--tp-shell-topbar-height);
+  height: calc(100vh - var(--tp-shell-topbar-height));
+}
+
+.vibe-shell-main {
+  padding-top: var(--tp-shell-topbar-height);
+}
+
+.vibe-shell-sidebar .vibe-shell-brand,
+.vibe-shell-workspace-switcher {
+  display: none;
+}
+
+/* Old sidebar branding is disabled */
+.vibe-shell-brand-fixed,
+.vibe-shell-brand-wordmark,
+.vibe-shell-brand-mark {
+  transform: none;
 }

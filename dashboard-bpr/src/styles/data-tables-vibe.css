@@ -417,3 +417,234 @@
   cursor: wait;
   opacity: 0.52;
 }
+
+/* Step 6C — Table lifecycle / permanent drop */
+
+.tp-column-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #676879;
+}
+
+.tp-delete-table-trigger {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ead2d7;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 9px;
+  color: #b6354a;
+  font-family: var(--tp-font-ui);
+  font-size: var(--tp-font-size-min);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.tp-delete-table-trigger:hover:not(:disabled) {
+  border-color: #dcaeba;
+  background: #fff5f7;
+  color: #97283c;
+}
+
+.tp-delete-table-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.tp-delete-modal-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(35, 36, 43, 0.38);
+  padding: 24px;
+}
+
+.tp-delete-modal {
+  display: flex;
+  width: min(520px, 100%);
+  gap: 14px;
+  border: 1px solid #e3e5ea;
+  border-radius: 12px;
+  background: #fff;
+  padding: 20px;
+  box-shadow:
+    0 18px 45px rgba(17, 24, 39, 0.16),
+    0 4px 14px rgba(17, 24, 39, 0.08);
+}
+
+.tp-delete-modal-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 9px;
+  background: #fff1f3;
+  color: #c5324a;
+}
+
+.tp-delete-modal-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.tp-delete-modal-content h2 {
+  margin: 1px 0 0;
+  color: #323338;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tp-delete-modal-content > p {
+  margin: 7px 0 14px;
+  color: #676879;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.tp-delete-table-summary {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border: 1px solid #e4e6eb;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.tp-delete-table-summary > div {
+  min-width: 0;
+  border-right: 1px solid #e7e9ee;
+  padding: 9px 10px;
+}
+
+.tp-delete-table-summary > div:last-child {
+  border-right: 0;
+}
+
+.tp-delete-table-summary span,
+.tp-delete-confirm-field > span {
+  display: block;
+  color: #8b8e98;
+  font-size: var(--tp-font-size-min);
+  font-weight: 400;
+}
+
+.tp-delete-table-summary strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #37383f;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-delete-confirm-field {
+  display: block;
+}
+
+.tp-delete-confirm-field > span strong {
+  color: #4b4d56;
+  font-weight: 600;
+}
+
+.tp-delete-confirm-field input {
+  width: 100%;
+  height: 36px;
+  margin-top: 7px;
+  border: 1px solid #cfd3df;
+  border-radius: 7px;
+  outline: 0;
+  background: #fff;
+  padding: 0 10px;
+  color: #323338;
+  font-family: var(--tp-font-ui);
+  font-size: 12px;
+}
+
+.tp-delete-confirm-field input:focus {
+  border-color: #d35a6d;
+  box-shadow: 0 0 0 2px rgba(211, 90, 109, 0.1);
+}
+
+.tp-delete-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.tp-delete-cancel-button,
+.tp-delete-confirm-button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 7px;
+  padding: 0 12px;
+  font-family: var(--tp-font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tp-delete-cancel-button {
+  border: 1px solid #dfe1e6;
+  background: #fff;
+  color: #51535d;
+}
+
+.tp-delete-cancel-button:hover:not(:disabled) {
+  background: #f5f6f8;
+}
+
+.tp-delete-confirm-button {
+  border: 1px solid #c9344c;
+  background: #d83a52;
+  color: #fff;
+}
+
+.tp-delete-confirm-button:hover:not(:disabled) {
+  background: #c83249;
+}
+
+.tp-delete-cancel-button:disabled,
+.tp-delete-confirm-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 640px) {
+  .tp-delete-modal-backdrop {
+    padding: 14px;
+  }
+
+  .tp-delete-modal {
+    padding: 16px;
+  }
+
+  .tp-delete-table-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .tp-delete-table-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid #e7e9ee;
+  }
+
+  .tp-delete-table-summary > div:last-child {
+    border-bottom: 0;
+  }
+}

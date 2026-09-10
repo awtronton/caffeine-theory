@@ -11,6 +11,7 @@ from database.table_service import (
     count_period_rows,
     create_new_table,
     create_table_relationship,
+    drop_warehouse_table,
     delete_table_relationship,
     get_all_tables,
     get_all_table_summaries,
@@ -445,6 +446,29 @@ def table_detail(table_name: str):
     except Exception as error:
         print(
             "ERROR /tables/{table_name}/detail:",
+            repr(error),
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.delete("/tables/{table_name}")
+def delete_table(table_name: str):
+    try:
+        result = drop_warehouse_table(table_name)
+
+        return {
+            "status": "success",
+            "message": "Tabel dan metadata terkait berhasil dihapus.",
+            **result,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR DELETE /tables/{table_name}:",
             repr(error),
         )
 

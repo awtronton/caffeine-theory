@@ -1,0 +1,16 @@
+{
+  "python.defaultInterpreterPath": "/Users/awtronton/Documents/OTORITAS JASA KEUANGAN/KANTOR OJK PALEMBANG/PENGAWASAN/Dashboard IJK/versi react/backend/venv/bin/python",
+  "python.analysis.extraPaths": [
+    "/Users/awtronton/Documents/OTORITAS JASA KEUANGAN/KANTOR OJK PALEMBANG/PENGAWASAN/Dashboard IJK/versi react/backend"
+  ],
+
+  "editor.formatOnSave": true,
+
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
