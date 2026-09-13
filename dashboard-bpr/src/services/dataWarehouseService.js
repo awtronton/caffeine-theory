@@ -352,3 +352,35 @@ export async function deleteTableRelationship(relationshipId) {
     "Gagal menghapus relationship"
   );
 }
+
+
+export async function preflightQuery(payload, { signal } = {}) {
+  return requestJson(
+    `${API_URL}/query/preflight`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    },
+    "Gagal memeriksa query"
+  );
+}
+
+
+export async function previewQuery(payload, { signal } = {}) {
+  return requestJson(
+    `${API_URL}/query/preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    },
+    "Gagal menjalankan data preview"
+  );
+}

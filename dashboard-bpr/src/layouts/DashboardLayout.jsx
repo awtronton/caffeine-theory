@@ -4,7 +4,6 @@ import {
   BarChart3,
   Bell,
   Building2,
-  ChevronDown,
   Database,
   FileText,
   Files,
@@ -13,8 +12,6 @@ import {
   LayoutDashboard,
   Menu,
   Network,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Settings2,
   Table2,
@@ -263,7 +260,13 @@ function DashboardLayout({ children, activeItem }) {
   }
 
   return (
-    <div className="vibe-shell">
+    <div
+      className={`vibe-shell ${
+        collapsed
+          ? "vibe-shell--sidebar-collapsed"
+          : ""
+      }`}
+    >
       {mobileOpen && (
         <button
           type="button"
@@ -281,6 +284,8 @@ function DashboardLayout({ children, activeItem }) {
         onMouseLeave={handleSidebarMouseLeave}
       >
         <div className="vibe-shell-sidebar-scroll">
+
+
           <nav className="vibe-shell-navigation" aria-label="Navigasi utama">
             {navigationGroups.map((group) => (
               <div key={group.label} className="vibe-shell-nav-group">
@@ -348,15 +353,25 @@ function DashboardLayout({ children, activeItem }) {
             </button>
           </div>
 
+
           <div className="vibe-shell-header-brand">
             <div className="vibe-shell-header-brand-logo">
-              <img src={caffeineLogo} alt="Caffeine theory" />
+              <img
+                src={caffeineLogo}
+                alt="Caffeine theory"
+              />
             </div>
             <div className="vibe-shell-header-brand-wordmark">
               <span className="brand-primary">Caffeine</span>
               <span className="brand-secondary">theory</span>
             </div>
           </div>
+
+          <div
+            id="vibe-shell-topbar-center"
+            className="vibe-shell-topbar-center"
+            aria-label="Navigasi halaman"
+          />
 
           <div className="vibe-shell-topbar-actions">
             <div className="vibe-shell-breadcrumb">

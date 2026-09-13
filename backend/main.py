@@ -2,7 +2,7 @@ import json
 from io import BytesIO
 
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -55,11 +55,17 @@ from services.relationship_intelligence_service import (
     queue_relationship_candidate_job,
     recover_relationship_candidate_queue,
 )
+from services.query_preflight_service import (
+    run_query_preflight,
+)
+from services.query_execution_service import (
+    execute_query_preview,
+)
 
 
 app = FastAPI(
     title="OJK Data Warehouse API",
-    version="1.5.0",
+    version="1.9.0",
 )
 
 
@@ -140,6 +146,43 @@ class RelationshipScoringJobCreateRequest(BaseModel):
     candidate_status: str = "pending"
     min_discovery_score: float = 0.45
     max_candidates: int = 5000
+
+
+class QueryPreflightJoinRequest(BaseModel):
+    relationship_id: int
+    join_type: str
+
+
+class QueryPreflightColumnRequest(BaseModel):
+    table_name: str
+    column_name: str
+
+
+class QueryFilterRequest(BaseModel):
+    table_name: str
+    column_name: str
+    operator: str
+    value: str | int | float | bool | None = None
+
+
+class QuerySortRequest(BaseModel):
+    table_name: str
+    column_name: str
+    direction: str = "asc"
+
+
+class QueryPreflightRequest(BaseModel):
+    base_table: str
+    joins: list[QueryPreflightJoinRequest] = Field(default_factory=list)
+    selected_columns: list[QueryPreflightColumnRequest] = Field(default_factory=list)
+    filters: list[QueryFilterRequest] = Field(default_factory=list)
+    sort_by: QuerySortRequest | None = None
+
+
+class QueryPreviewRequest(QueryPreflightRequest):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=100, ge=1, le=200)
+    unmask_columns: list[QueryPreflightColumnRequest] = Field(default_factory=list)
 
 
 def dataframe_to_records(df):
@@ -782,6 +825,93 @@ def relationship_scoring_job(job_id: int):
         return {"status":"success","job":get_relationship_scoring_job_status(job_id)}
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+# =====================================================
+# QUERY PREFLIGHT
+# =====================================================
+
+@app.post("/query/preflight")
+def query_preflight(payload: QueryPreflightRequest):
+    try:
+        result = run_query_preflight(
+            base_table=payload.base_table,
+            joins=[item.model_dump() for item in payload.joins],
+            selected_columns=[
+                item.model_dump()
+                for item in payload.selected_columns
+            ],
+            filters=[
+                item.model_dump()
+                for item in payload.filters
+            ],
+            sort_by=(
+                payload.sort_by.model_dump()
+                if payload.sort_by
+                else None
+            ),
+        )
+
+        return {
+            "status": "success",
+            "preflight": result,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR POST /query/preflight:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.post("/query/preview")
+def query_preview(payload: QueryPreviewRequest):
+    try:
+        result = execute_query_preview(
+            base_table=payload.base_table,
+            joins=[
+                item.model_dump()
+                for item in payload.joins
+            ],
+            selected_columns=[
+                item.model_dump()
+                for item in payload.selected_columns
+            ],
+            filters=[
+                item.model_dump()
+                for item in payload.filters
+            ],
+            sort_by=(
+                payload.sort_by.model_dump()
+                if payload.sort_by
+                else None
+            ),
+            page=payload.page,
+            page_size=payload.page_size,
+            unmask_columns=[
+                item.model_dump()
+                for item in payload.unmask_columns
+            ],
+        )
+
+        return {
+            "status": "success",
+            "preview": result,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR POST /query/preview:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
 
 
 # =====================================================

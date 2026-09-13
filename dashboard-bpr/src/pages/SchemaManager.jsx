@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Button,
   Dropdown,
@@ -146,6 +147,10 @@ function emptyRelationshipPair() {
 function SchemaManager() {
   const [activeTab, setActiveTab] =
     useState('review')
+  const [
+    topbarNavigationTarget,
+    setTopbarNavigationTarget,
+  ] = useState(null)
 
   const [tables, setTables] = useState([])
   const [selectedTable, setSelectedTable] =
@@ -201,6 +206,14 @@ function SchemaManager() {
       })),
     [tables],
   )
+
+  useEffect(() => {
+    setTopbarNavigationTarget(
+      document.getElementById(
+        'vibe-shell-topbar-center',
+      ),
+    )
+  }, [])
 
   const filterOptions = [
     {
@@ -910,54 +923,62 @@ function SchemaManager() {
           badge="Schema Workspace"
         />
 
-        <nav className="tp-schema-tabs">
-          <button
-            type="button"
-            className={`tp-schema-tab ${
-              activeTab === 'review'
-                ? 'is-active'
-                : ''
-            }`}
-            onClick={() =>
-              setActiveTab('review')
-            }
-          >
-            <Columns3 size={14} />
-            Schema Review
-          </button>
+        {topbarNavigationTarget &&
+          createPortal(
+            <nav
+              className="tp-schema-tabs tp-schema-tabs--topbar"
+              aria-label="Schema Manager submenu"
+            >
+              <button
+                type="button"
+                className={`tp-schema-tab ${
+                  activeTab === 'review'
+                    ? 'is-active'
+                    : ''
+                }`}
+                onClick={() =>
+                  setActiveTab('review')
+                }
+              >
+                <Columns3 size={14} />
+                Schema Review
+              </button>
 
-          <button
-            type="button"
-            className={`tp-schema-tab ${
-              activeTab === 'relationships'
-                ? 'is-active'
-                : ''
-            }`}
-            onClick={() =>
-              setActiveTab('relationships')
-            }
-          >
-            <GitBranch size={14} />
-            Relationship Designer
-            <span>Foundation</span>
-          </button>
+              <button
+                type="button"
+                className={`tp-schema-tab ${
+                  activeTab ===
+                  'relationships'
+                    ? 'is-active'
+                    : ''
+                }`}
+                onClick={() =>
+                  setActiveTab(
+                    'relationships',
+                  )
+                }
+              >
+                <GitBranch size={14} />
+                Relationship Designer
+              </button>
 
-          <button
-            type="button"
-            className={`tp-schema-tab ${
-              activeTab === 'sql'
-                ? 'is-active'
-                : ''
-            }`}
-            onClick={() =>
-              setActiveTab('sql')
-            }
-          >
-            <Workflow size={14} />
-            Visual SQL Builder
-            <span>Foundation</span>
-          </button>
-        </nav>
+              <button
+                type="button"
+                className={`tp-schema-tab ${
+                  activeTab === 'sql'
+                    ? 'is-active'
+                    : ''
+                }`}
+                onClick={() =>
+                  setActiveTab('sql')
+                }
+              >
+                <Workflow size={14} />
+                Visual SQL Builder
+              </button>
+            </nav>,
+            topbarNavigationTarget,
+          )}
 
         {error && (
           <div className="tp-schema-error">
