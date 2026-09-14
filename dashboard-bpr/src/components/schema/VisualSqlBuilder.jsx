@@ -4,17 +4,14 @@ import {
   useRef,
   useState,
 } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Button,
-  Dropdown,
 } from '@vibe/core'
 import {
   AlertCircle,
   ArrowDownUp,
   ArrowRight,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clipboard,
@@ -37,6 +34,7 @@ import {
   preflightQuery,
   previewQuery,
 } from '../../services/dataWarehouseService'
+import CaffeineDropdown from '../ui/CaffeineDropdown'
 
 const JOIN_OPTIONS = [
   {
@@ -374,250 +372,6 @@ function sqlLiteral(value) {
     "'",
     "''",
   )}'`
-}
-
-function CompactJoinTypeSelect({
-  value,
-  onChange,
-  disabled = false,
-}) {
-  const [open, setOpen] =
-    useState(false)
-  const [menuStyle, setMenuStyle] =
-    useState({})
-  const rootRef = useRef(null)
-  const triggerRef = useRef(null)
-
-  const selected =
-    JOIN_OPTIONS.find(
-      (option) =>
-        option.value === value,
-    ) || JOIN_OPTIONS[1]
-
-  function updateMenuPosition() {
-    const rect =
-      triggerRef.current?.getBoundingClientRect()
-
-    if (!rect) {
-      return
-    }
-
-    const menuWidth = Math.max(
-      rect.width,
-      190,
-    )
-
-    const viewportPadding = 8
-    const spaceBelow =
-      window.innerHeight -
-      rect.bottom -
-      viewportPadding
-    const estimatedMenuHeight = 220
-    const openAbove =
-      spaceBelow <
-        estimatedMenuHeight &&
-      rect.top >
-        estimatedMenuHeight
-
-    setMenuStyle({
-      position: 'fixed',
-      left: Math.min(
-        Math.max(
-          viewportPadding,
-          rect.left,
-        ),
-        window.innerWidth -
-          menuWidth -
-          viewportPadding,
-      ),
-      top: openAbove
-        ? undefined
-        : rect.bottom + 4,
-      bottom: openAbove
-        ? window.innerHeight -
-          rect.top +
-          4
-        : undefined,
-      width: menuWidth,
-      zIndex: 2000,
-    })
-  }
-
-  useEffect(() => {
-    if (!open) {
-      return undefined
-    }
-
-    updateMenuPosition()
-
-    function handlePointerDown(
-      event,
-    ) {
-      const clickedTrigger =
-        rootRef.current?.contains(
-          event.target,
-        )
-      const clickedMenu =
-        event.target.closest?.(
-          '.tp-compact-join-menu',
-        )
-
-      if (
-        !clickedTrigger &&
-        !clickedMenu
-      ) {
-        setOpen(false)
-      }
-    }
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') {
-        setOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-
-    function handleViewportChange() {
-      updateMenuPosition()
-    }
-
-    document.addEventListener(
-      'pointerdown',
-      handlePointerDown,
-    )
-    document.addEventListener(
-      'keydown',
-      handleKeyDown,
-    )
-    window.addEventListener(
-      'resize',
-      handleViewportChange,
-    )
-    window.addEventListener(
-      'scroll',
-      handleViewportChange,
-      true,
-    )
-
-    return () => {
-      document.removeEventListener(
-        'pointerdown',
-        handlePointerDown,
-      )
-      document.removeEventListener(
-        'keydown',
-        handleKeyDown,
-      )
-      window.removeEventListener(
-        'resize',
-        handleViewportChange,
-      )
-      window.removeEventListener(
-        'scroll',
-        handleViewportChange,
-        true,
-      )
-    }
-  }, [open])
-
-  function chooseOption(
-    optionValue,
-  ) {
-    onChange?.(optionValue)
-    setOpen(false)
-    window.requestAnimationFrame(
-      () =>
-        triggerRef.current?.focus(),
-    )
-  }
-
-  const menu = open
-    ? createPortal(
-        <div
-          className="tp-compact-join-menu"
-          style={menuStyle}
-          role="listbox"
-          aria-label="Join type"
-        >
-          {JOIN_OPTIONS.map(
-            (option) => {
-              const active =
-                option.value ===
-                selected.value
-
-              return (
-                <button
-                  key={
-                    option.value
-                  }
-                  type="button"
-                  role="option"
-                  aria-selected={
-                    active
-                  }
-                  className={`tp-compact-join-option ${
-                    active
-                      ? 'is-selected'
-                      : ''
-                  }`}
-                  onClick={() =>
-                    chooseOption(
-                      option.value,
-                    )
-                  }
-                >
-                  {option.label}
-                </button>
-              )
-            },
-          )}
-        </div>,
-        document.body,
-      )
-    : null
-
-  return (
-    <div
-      ref={rootRef}
-      className={`tp-compact-join-select ${
-        open ? 'is-open' : ''
-      }`}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="tp-compact-join-trigger"
-        onClick={() => {
-          if (disabled) {
-            return
-          }
-
-          if (!open) {
-            updateMenuPosition()
-          }
-
-          setOpen(
-            (current) =>
-              !current,
-          )
-        }}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span>
-          {selected.label}
-        </span>
-
-        <ChevronDown
-          size={14}
-          strokeWidth={2}
-        />
-      </button>
-
-      {menu}
-    </div>
-  )
 }
 
 function quoteIdentifier(value) {
@@ -2324,7 +2078,7 @@ function VisualSqlBuilder({
                   Base Table
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={tableOptions}
                   value={
                     tableOptions.find(
@@ -2349,7 +2103,7 @@ function VisualSqlBuilder({
                   Relationship
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={
                     relationshipOptions
                   }
@@ -2387,17 +2141,29 @@ function VisualSqlBuilder({
                     Join Type
                   </label>
 
-                  <CompactJoinTypeSelect
+                  <CaffeineDropdown
+                    options={
+                      JOIN_OPTIONS
+                    }
                     value={
-                      nextJoinType
+                      JOIN_OPTIONS.find(
+                        (option) =>
+                          option.value ===
+                          nextJoinType,
+                      ) ||
+                      JOIN_OPTIONS[1]
                     }
                     onChange={(
-                      joinType,
+                      option,
                     ) =>
                       setNextJoinType(
-                        joinType,
+                        option?.value ||
+                          'LEFT JOIN',
                       )
                     }
+                    searchable={false}
+                    clearable={false}
+                    className="tp-vibe-dropdown"
                   />
                 </div>
 
@@ -2530,18 +2296,30 @@ function VisualSqlBuilder({
                         </div>
 
                         <div className="tp-sql-join-type-row">
-                          <CompactJoinTypeSelect
+                          <CaffeineDropdown
+                            options={
+                              JOIN_OPTIONS
+                            }
                             value={
-                              step.joinType
+                              JOIN_OPTIONS.find(
+                                (option) =>
+                                  option.value ===
+                                  step.joinType,
+                              ) ||
+                              JOIN_OPTIONS[1]
                             }
                             onChange={(
-                              joinType,
+                              option,
                             ) =>
                               updateJoinType(
                                 index,
-                                joinType,
+                                option?.value ||
+                                  'LEFT JOIN',
                               )
                             }
+                            searchable={false}
+                            clearable={false}
+                            className="tp-vibe-dropdown"
                           />
 
                           <small>
@@ -2845,7 +2623,7 @@ function VisualSqlBuilder({
                               Column
                             </label>
 
-                            <Dropdown
+                            <CaffeineDropdown
                               options={
                                 filterColumnOptions
                               }
@@ -2873,7 +2651,7 @@ function VisualSqlBuilder({
                               Operator
                             </label>
 
-                            <Dropdown
+                            <CaffeineDropdown
                               options={
                                 operatorOptions
                               }
@@ -2910,7 +2688,7 @@ function VisualSqlBuilder({
                                 filter.dataType,
                               ) ===
                                 'boolean' ? (
-                                <Dropdown
+                                <CaffeineDropdown
                                   options={[
                                     {
                                       value:
@@ -3050,7 +2828,7 @@ function VisualSqlBuilder({
                   Sort by
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={
                     filterColumnOptions
                   }
@@ -3072,7 +2850,7 @@ function VisualSqlBuilder({
                   Direction
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={
                     sortDirectionChoices
                   }
@@ -3477,36 +3255,33 @@ function VisualSqlBuilder({
                 <div className="tp-sql-preview-toolbar-actions">
                   <label className="tp-sql-page-size">
                     Rows
-                    <select
-                      value={
-                        previewPageSize
-                      }
+                    <CaffeineDropdown
+                      options={PAGE_SIZE_OPTIONS.map(
+                        (size) => ({
+                          value: size,
+                          label: String(size),
+                        }),
+                      )}
+                      value={{
+                        value:
+                          previewPageSize,
+                        label:
+                          String(
+                            previewPageSize,
+                          ),
+                      }}
                       onChange={(
-                        event,
+                        option,
                       ) =>
                         changePreviewPageSize(
-                          event.target
-                            .value,
+                          option?.value ||
+                            100,
                         )
                       }
-                    >
-                      {PAGE_SIZE_OPTIONS.map(
-                        (
-                          size,
-                        ) => (
-                          <option
-                            key={
-                              size
-                            }
-                            value={
-                              size
-                            }
-                          >
-                            {size}
-                          </option>
-                        ),
-                      )}
-                    </select>
+                      searchable={false}
+                      clearable={false}
+                      className="tp-sql-page-size-dropdown"
+                    />
                   </label>
 
                   <button

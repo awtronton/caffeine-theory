@@ -4,9 +4,6 @@ import {
   useState,
 } from 'react'
 import {
-  Dropdown,
-} from '@vibe/core'
-import {
   ArrowDown,
   ArrowUp,
   ChevronsLeft,
@@ -23,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 
+import CaffeineDropdown from '../components/ui/CaffeineDropdown'
 import DashboardLayout from '../layouts/DashboardLayout'
 import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import {
@@ -414,7 +412,7 @@ function TableExplorer() {
             <div className="tp-explorer-table-select">
               <label>Table</label>
 
-              <Dropdown
+              <CaffeineDropdown
                 options={tableOptions}
                 value={
                   tableOptions.find(
@@ -493,7 +491,7 @@ function TableExplorer() {
 
             <div className="tp-explorer-filter-control">
               <label>Bank</label>
-              <Dropdown
+              <CaffeineDropdown
                 options={bankOptions}
                 value={
                   bankOptions.find(
@@ -517,7 +515,7 @@ function TableExplorer() {
 
             <div className="tp-explorer-filter-control">
               <label>Bulan</label>
-              <Dropdown
+              <CaffeineDropdown
                 options={monthOptions}
                 value={
                   monthOptions.find(
@@ -541,7 +539,7 @@ function TableExplorer() {
 
             <div className="tp-explorer-filter-control">
               <label>Tahun</label>
-              <Dropdown
+              <CaffeineDropdown
                 options={yearOptions}
                 value={
                   yearOptions.find(
@@ -600,7 +598,7 @@ function TableExplorer() {
             <div className="tp-explorer-page-size">
               <span>Show</span>
 
-              <Dropdown
+              <CaffeineDropdown
                 options={pageSizeOptions}
                 value={
                   pageSizeOptions.find(

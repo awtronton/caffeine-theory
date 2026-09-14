@@ -1,0 +1,236 @@
+/* =========================================================
+   Caffeine Theory — Unified Dropdown
+   Same visual language as the Visual SQL Join Type control.
+   ========================================================= */
+
+:root {
+  --ct-dropdown-font-size: 10px;
+  --ct-dropdown-line-height: 1.25;
+  --ct-dropdown-field-height: 40px;
+}
+
+.ct-dropdown {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--tp-font-ui);
+}
+
+.ct-dropdown-trigger {
+  display: flex;
+  width: 100%;
+  height: var(--ct-dropdown-field-height);
+  min-height: var(--ct-dropdown-field-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #c8ccd6;
+  border-radius: 6px;
+  outline: 0;
+  background: #ffffff;
+  padding: 0 9px 0 10px;
+  color: #323338;
+  font-family: var(--tp-font-ui);
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 500;
+  line-height: var(--ct-dropdown-line-height);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.ct-dropdown-trigger:hover:not(:disabled) {
+  border-color: #9ea3ad;
+}
+
+.ct-dropdown.is-open
+  .ct-dropdown-trigger {
+  border-color: #0073ea;
+  box-shadow: 0 0 0 1px #0073ea;
+}
+
+.ct-dropdown-trigger:focus-visible {
+  border-color: #0073ea;
+  box-shadow: 0 0 0 1px #0073ea;
+}
+
+.ct-dropdown-trigger:disabled {
+  border-color: #e2e4e9;
+  background: #f1f2f5;
+  color: #a0a3ad;
+  cursor: not-allowed;
+}
+
+.ct-dropdown-value {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 500;
+  line-height: var(--ct-dropdown-line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ct-dropdown-value.is-placeholder {
+  color: #8a8d98;
+  font-weight: 400;
+}
+
+.ct-dropdown-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.ct-dropdown-chevron {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.ct-dropdown.is-open
+  .ct-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.ct-dropdown-clear {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 4px;
+  color: #8a8d98;
+}
+
+.ct-dropdown-clear:hover {
+  background: #eef0f3;
+  color: #323338;
+}
+
+.ct-dropdown-menu {
+  overflow: hidden;
+  border: 1px solid #d8dbe2;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 4px;
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.13),
+    0 2px 8px rgba(15, 23, 42, 0.06);
+  font-family: var(--tp-font-ui);
+  font-size: var(--ct-dropdown-font-size);
+}
+
+.ct-dropdown-search {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  border: 1px solid #d8dbe2;
+  border-radius: 5px;
+  background: #ffffff;
+  padding: 0 8px;
+  color: #8a8d98;
+}
+
+.ct-dropdown-search:focus-within {
+  border-color: #0073ea;
+}
+
+.ct-dropdown-search svg {
+  flex: 0 0 auto;
+}
+
+.ct-dropdown-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #323338;
+  font-family: var(--tp-font-ui);
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 400;
+  line-height: var(--ct-dropdown-line-height);
+}
+
+.ct-dropdown-search input::placeholder {
+  color: #a0a3ad;
+}
+
+.ct-dropdown-options {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ct-dropdown-option {
+  display: flex;
+  width: 100%;
+  min-height: 27px;
+  align-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 5px 8px;
+  color: #323338;
+  font-family: var(--tp-font-ui);
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 500;
+  line-height: var(--ct-dropdown-line-height);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ct-dropdown-option:hover {
+  background: #f1f3f6;
+}
+
+.ct-dropdown-option.is-selected {
+  background: #e7f3ff;
+  color: #0060b9;
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 600;
+}
+
+.ct-dropdown-option +
+  .ct-dropdown-option {
+  margin-top: 1px;
+}
+
+.ct-dropdown-empty {
+  padding: 9px 8px;
+  color: #8a8d98;
+  font-size: var(--ct-dropdown-font-size);
+  font-weight: 400;
+  line-height: var(--ct-dropdown-line-height);
+}
+
+/* Existing project layout hooks remain compatible. */
+.tp-vibe-dropdown.ct-dropdown {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Compact page-size dropdown. */
+.tp-sql-page-size-dropdown {
+  width: 74px;
+  min-width: 74px;
+}
+
+.tp-sql-page-size-dropdown
+  .ct-dropdown-trigger {
+  height: 28px;
+  min-height: 28px;
+  padding-inline: 7px;
+}
+
+@media (max-width: 760px) {
+  .ct-dropdown-menu {
+    max-width: calc(100vw - 16px);
+  }
+}

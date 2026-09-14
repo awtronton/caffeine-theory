@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dropdown, NumberField } from "@vibe/core";
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Button, NumberField } from '@vibe/core'
 import {
   detectExcelSheets,
   previewExcel,
@@ -7,7 +7,7 @@ import {
   getTables,
   getBanks,
   checkPeriod,
-} from "../services/dataWarehouseService";
+} from '../services/dataWarehouseService'
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -26,155 +26,158 @@ import {
   ChevronsRight,
   PencilLine,
   Save,
-} from "lucide-react";
+} from 'lucide-react'
 
-import DashboardLayout from "../layouts/DashboardLayout";
-import WorkspacePageHeader from "../components/ui/WorkspacePageHeader";
-import "../styles/upload-vibe.css";
+import CaffeineDropdown from '../components/ui/CaffeineDropdown'
+import DashboardLayout from '../layouts/DashboardLayout'
+import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
+import '../styles/upload-vibe.css'
 
 const months = [
-  { value: 1, label: "Januari" },
-  { value: 2, label: "Februari" },
-  { value: 3, label: "Maret" },
-  { value: 4, label: "April" },
-  { value: 5, label: "Mei" },
-  { value: 6, label: "Juni" },
-  { value: 7, label: "Juli" },
-  { value: 8, label: "Agustus" },
-  { value: 9, label: "September" },
-  { value: 10, label: "Oktober" },
-  { value: 11, label: "November" },
-  { value: 12, label: "Desember" },
-];
+  { value: 1, label: 'Januari' },
+  { value: 2, label: 'Februari' },
+  { value: 3, label: 'Maret' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'Mei' },
+  { value: 6, label: 'Juni' },
+  { value: 7, label: 'Juli' },
+  { value: 8, label: 'Agustus' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'Oktober' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'Desember' },
+]
 
-const DATA_START_YEAR = 2021;
+const DATA_START_YEAR = 2021
 
 const tableModeOptions = [
   {
-    value: "existing",
-    label: "Pilih tabel yang sudah ada",
+    value: 'existing',
+    label: 'Pilih tabel yang sudah ada',
   },
   {
-    value: "new",
-    label: "Buat tabel baru",
+    value: 'new',
+    label: 'Buat tabel baru',
   },
-];
+]
 
 function normalizePreviewResponse(result) {
-  const rawRows = Array.isArray(result?.preview)
-    ? result.preview
-    : Array.isArray(result?.preview_rows)
-      ? result.preview_rows
-      : Array.isArray(result?.rows)
-        ? result.rows
-        : Array.isArray(result?.data)
-          ? result.data
-          : [];
+  const rawRows =
+    Array.isArray(result?.preview)
+      ? result.preview
+      : Array.isArray(result?.preview_rows)
+        ? result.preview_rows
+        : Array.isArray(result?.rows)
+          ? result.rows
+          : Array.isArray(result?.data)
+            ? result.data
+            : []
 
   let columns = Array.isArray(result?.columns)
     ? result.columns.map((column) => String(column))
-    : [];
+    : []
 
   if (
     columns.length === 0 &&
     rawRows.length > 0 &&
     rawRows[0] &&
-    typeof rawRows[0] === "object" &&
+    typeof rawRows[0] === 'object' &&
     !Array.isArray(rawRows[0])
   ) {
-    columns = Object.keys(rawRows[0]);
+    columns = Object.keys(rawRows[0])
   }
 
   return {
     ...result,
     columns,
     preview: rawRows,
-  };
+  }
 }
 
 function safeCellValue(value) {
-  if (value === null || value === undefined) return "";
+  if (value === null || value === undefined) return ''
 
-  if (typeof value === "object") {
+  if (typeof value === 'object') {
     try {
-      return JSON.stringify(value);
+      return JSON.stringify(value)
     } catch {
-      return String(value);
+      return String(value)
     }
   }
 
-  return String(value);
+  return String(value)
 }
 
-const PREVIEW_MAX_CHARS = 60;
+
+const PREVIEW_MAX_CHARS = 60
 
 function previewCellValue(value) {
-  const text = safeCellValue(value);
+  const text = safeCellValue(value)
 
   if (text.length <= PREVIEW_MAX_CHARS) {
-    return text;
+    return text
   }
 
-  return `${text.substring(0, PREVIEW_MAX_CHARS)}...`;
+  return `${text.substring(0, PREVIEW_MAX_CHARS)}...`
 }
 
 function normalizeSqlIdentifier(value) {
-  return String(value || "")
+  return String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/%/g, "persen")
-    .replace(/[^a-z0-9_]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_");
+    .replace(/%/g, 'persen')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
 }
 
 function UploadData() {
-  const inputRef = useRef(null);
+  const inputRef = useRef(null)
 
-  const [file, setFile] = useState(null);
-  const [dragging, setDragging] = useState(false);
-  const [excelSheets, setExcelSheets] = useState([]);
-  const [selectedSheet, setSelectedSheet] = useState("");
+  const [file, setFile] = useState(null)
+  const [dragging, setDragging] = useState(false)
+  const [excelSheets, setExcelSheets] = useState([])
+  const [selectedSheet, setSelectedSheet] = useState('')
 
-  const [tableMode, setTableMode] = useState("existing");
-  const [tableName, setTableName] = useState("");
-  const [banks, setBanks] = useState([]);
-  const [selectedBankName, setSelectedBankName] = useState("");
-  const [loadingBanks, setLoadingBanks] = useState(false);
-  const [bankLoadError, setBankLoadError] = useState("");
-  const [month, setMonth] = useState(1);
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [headerRow, setHeaderRow] = useState(1);
-  const [firstDataRow, setFirstDataRow] = useState(1);
+  const [tableMode, setTableMode] = useState('existing')
+  const [tableName, setTableName] = useState('')
+  const [banks, setBanks] = useState([])
+  const [selectedBankName, setSelectedBankName] = useState('')
+  const [loadingBanks, setLoadingBanks] = useState(false)
+  const [bankLoadError, setBankLoadError] = useState('')
+  const [month, setMonth] = useState(1)
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [headerRow, setHeaderRow] = useState(1)
+  const [firstDataRow, setFirstDataRow] = useState(1)
 
-  const [previewData, setPreviewData] = useState(null);
-  const [processing, setProcessing] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("warning");
+  const [previewData, setPreviewData] = useState(null)
+  const [processing, setProcessing] = useState(false)
+  const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('warning')
 
-  const [deletedRowIds, setDeletedRowIds] = useState([]);
-  const [selectedRowIds, setSelectedRowIds] = useState([]);
-  const [columnMapping, setColumnMapping] = useState({});
-  const [currentPage, setCurrentPage] = useState(1);
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState(null);
-  const [duplicateWarning, setDuplicateWarning] = useState(null);
-  const rowsPerPage = 20;
+  const [deletedRowIds, setDeletedRowIds] = useState([])
+  const [selectedRowIds, setSelectedRowIds] = useState([])
+  const [columnMapping, setColumnMapping] = useState({})
+  const [currentPage, setCurrentPage] = useState(1)
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState(null)
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
+  const rowsPerPage = 20
 
-  const [existingTables, setExistingTables] = useState([]);
-  const [loadingTables, setLoadingTables] = useState(false);
-  const [tableLoadError, setTableLoadError] = useState("");
+  const [existingTables, setExistingTables] = useState([])
+  const [loadingTables, setLoadingTables] = useState(false)
+  const [tableLoadError, setTableLoadError] = useState('')
 
   const fileSize = useMemo(() => {
-    if (!file) return "";
+    if (!file) return ''
 
-    const mb = file.size / 1024 / 1024;
+    const mb = file.size / 1024 / 1024
 
-    return `${mb.toFixed(2)} MB`;
-  }, [file]);
+    return `${mb.toFixed(2)} MB`
+  }, [file])
 
   const selectedMonthLabel =
-    months.find((item) => item.value === Number(month))?.label || "-";
+    months.find((item) => item.value === Number(month))?.label || '-'
 
   const existingTableOptions = useMemo(
     () =>
@@ -183,7 +186,7 @@ function UploadData() {
         label: table,
       })),
     [existingTables],
-  );
+  )
 
   const bankOptions = useMemo(
     () =>
@@ -192,7 +195,7 @@ function UploadData() {
         label: bank.bank_name,
       })),
     [banks],
-  );
+  )
 
   const monthOptions = useMemo(
     () =>
@@ -201,21 +204,24 @@ function UploadData() {
         label: item.label,
       })),
     [],
-  );
+  )
 
   const yearOptions = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const endYear = Math.max(currentYear, DATA_START_YEAR);
+    const currentYear = new Date().getFullYear()
+    const endYear = Math.max(currentYear, DATA_START_YEAR)
 
-    return Array.from({ length: endYear - DATA_START_YEAR + 1 }, (_, index) => {
-      const optionYear = DATA_START_YEAR + index;
+    return Array.from(
+      { length: endYear - DATA_START_YEAR + 1 },
+      (_, index) => {
+        const optionYear = DATA_START_YEAR + index
 
-      return {
-        value: optionYear,
-        label: String(optionYear),
-      };
-    });
-  }, []);
+        return {
+          value: optionYear,
+          label: String(optionYear),
+        }
+      },
+    )
+  }, [])
 
   const sheetOptions = useMemo(
     () =>
@@ -224,249 +230,255 @@ function UploadData() {
         label: sheet,
       })),
     [excelSheets],
-  );
+  )
+
 
   const activePreviewRows = useMemo(() => {
-    const rows = Array.isArray(previewData?.preview) ? previewData.preview : [];
-    const deleted = new Set(deletedRowIds);
-    return rows.filter((row) => !deleted.has(row.__row_id));
-  }, [previewData, deletedRowIds]);
+    const rows = Array.isArray(previewData?.preview) ? previewData.preview : []
+    const deleted = new Set(deletedRowIds)
+    return rows.filter((row) => !deleted.has(row.__row_id))
+  }, [previewData, deletedRowIds])
 
   const totalPages = Math.max(
     1,
     Math.ceil(activePreviewRows.length / rowsPerPage),
-  );
+  )
 
   const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * rowsPerPage;
-    return activePreviewRows.slice(start, start + rowsPerPage);
-  }, [activePreviewRows, currentPage]);
+    const start = (currentPage - 1) * rowsPerPage
+    return activePreviewRows.slice(start, start + rowsPerPage)
+  }, [activePreviewRows, currentPage])
 
   const columnValidation = useMemo(() => {
-    if (!previewData || tableMode !== "new") {
-      return { valid: true, errors: {} };
+    if (!previewData || tableMode !== 'new') {
+      return { valid: true, errors: {} }
     }
 
-    const columns = Array.isArray(previewData.columns)
-      ? previewData.columns
-      : [];
-    const errors = {};
-    const seen = new Map();
+    const columns = Array.isArray(previewData.columns) ? previewData.columns : []
+    const errors = {}
+    const seen = new Map()
 
     columns.forEach((column) => {
-      const mapped = String(columnMapping[column] ?? "").trim();
+      const mapped = String(columnMapping[column] ?? '').trim()
 
       if (!mapped) {
-        errors[column] = "Nama kolom wajib diisi.";
-        return;
+        errors[column] = 'Nama kolom wajib diisi.'
+        return
       }
 
       if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(mapped)) {
-        errors[column] =
-          "Gunakan huruf, angka, dan underscore; tidak boleh diawali angka.";
-        return;
+        errors[column] = 'Gunakan huruf, angka, dan underscore; tidak boleh diawali angka.'
+        return
       }
 
-      const key = mapped.toLowerCase();
+      const key = mapped.toLowerCase()
       if (seen.has(key)) {
-        errors[column] = `Duplikat dengan kolom ${seen.get(key)}.`;
-        return;
+        errors[column] = `Duplikat dengan kolom ${seen.get(key)}.`
+        return
       }
 
-      seen.set(key, column);
-    });
+      seen.set(key, column)
+    })
 
     return {
       valid: Object.keys(errors).length === 0,
       errors,
-    };
-  }, [previewData, tableMode, columnMapping]);
+    }
+  }, [previewData, tableMode, columnMapping])
 
   async function loadExistingTables({ silent = false } = {}) {
     try {
-      setLoadingTables(true);
-      setTableLoadError("");
+      setLoadingTables(true)
+      setTableLoadError('')
 
-      const result = await getTables();
-      const tables = Array.isArray(result?.tables) ? result.tables : [];
+      const result = await getTables()
+      const tables = Array.isArray(result?.tables) ? result.tables : []
 
-      setExistingTables(tables);
+      setExistingTables(tables)
 
       // Bila tabel yang sebelumnya dipilih sudah tidak ada,
       // reset pilihan agar tidak menyimpan ke target yang salah.
       setTableName((current) => {
-        if (tableMode !== "existing") return current;
-        if (!current) return current;
-        return tables.includes(current) ? current : "";
-      });
+        if (tableMode !== 'existing') return current
+        if (!current) return current
+        return tables.includes(current) ? current : ''
+      })
     } catch (error) {
-      console.error(error);
-      setExistingTables([]);
+      console.error(error)
+      setExistingTables([])
       setTableLoadError(
-        error.message || "Gagal mengambil daftar tabel dari database.",
-      );
+        error.message || 'Gagal mengambil daftar tabel dari database.',
+      )
 
       if (!silent) {
         showMessage(
-          error.message || "Gagal mengambil daftar tabel dari database.",
-          "warning",
-        );
+          error.message || 'Gagal mengambil daftar tabel dari database.',
+          'warning',
+        )
       }
     } finally {
-      setLoadingTables(false);
+      setLoadingTables(false)
     }
   }
 
   async function loadBanks({ silent = false } = {}) {
     try {
-      setLoadingBanks(true);
-      setBankLoadError("");
+      setLoadingBanks(true)
+      setBankLoadError('')
 
-      const result = await getBanks();
-      const bankList = Array.isArray(result?.banks) ? result.banks : [];
+      const result = await getBanks()
+      const bankList = Array.isArray(result?.banks) ? result.banks : []
 
-      setBanks(bankList);
+      setBanks(bankList)
 
       setSelectedBankName((current) => {
-        if (!current) return current;
+        if (!current) return current
         return bankList.some((bank) => bank.bank_name === current)
           ? current
-          : "";
-      });
+          : ''
+      })
     } catch (error) {
-      console.error(error);
-      setBanks([]);
-      setBankLoadError(error.message || "Gagal mengambil master bank.");
+      console.error(error)
+      setBanks([])
+      setBankLoadError(
+        error.message || 'Gagal mengambil master bank.',
+      )
 
       if (!silent) {
-        showMessage(error.message || "Gagal mengambil master bank.", "warning");
+        showMessage(
+          error.message || 'Gagal mengambil master bank.',
+          'warning',
+        )
       }
     } finally {
-      setLoadingBanks(false);
+      setLoadingBanks(false)
     }
   }
 
   useEffect(() => {
-    loadExistingTables({ silent: true });
-    loadBanks({ silent: true });
+    loadExistingTables({ silent: true })
+    loadBanks({ silent: true })
     // master tabel dan bank cukup dimuat saat halaman pertama kali dibuka
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
 
-  function showMessage(text, type = "warning") {
-    setMessage(text);
-    setMessageType(type);
+  function showMessage(text, type = 'warning') {
+    setMessage(text)
+    setMessageType(type)
   }
 
   async function handleExcelFile(selectedFile) {
-    if (!selectedFile) return;
+    if (!selectedFile) return
 
-    const extension = selectedFile.name.split(".").pop()?.toLowerCase();
+    const extension = selectedFile.name
+      .split('.')
+      .pop()
+      ?.toLowerCase()
 
-    if (!["xls", "xlsx"].includes(extension)) {
-      showMessage("File harus berformat XLS atau XLSX.", "warning");
-      return;
+    if (!['xls', 'xlsx'].includes(extension)) {
+      showMessage('File harus berformat XLS atau XLSX.', 'warning')
+      return
     }
 
     try {
-      setProcessing(true);
-      setPreviewData(null);
-      setSaveResult(null);
-      setDuplicateWarning(null);
-      setExcelSheets([]);
-      setSelectedSheet("");
-      showMessage("", "warning");
+      setProcessing(true)
+      setPreviewData(null)
+      setSaveResult(null)
+      setDuplicateWarning(null)
+      setExcelSheets([])
+      setSelectedSheet('')
+      showMessage('', 'warning')
 
-      const result = await detectExcelSheets(selectedFile);
-      const sheets = Array.isArray(result?.sheets) ? result.sheets : [];
+      const result = await detectExcelSheets(selectedFile)
+      const sheets = Array.isArray(result?.sheets) ? result.sheets : []
 
-      setFile(selectedFile);
-      setExcelSheets(sheets);
+      setFile(selectedFile)
+      setExcelSheets(sheets)
 
       if (sheets.length > 0) {
-        setSelectedSheet(sheets[0]);
+        setSelectedSheet(sheets[0])
         showMessage(
           `File berhasil dibaca. Ditemukan ${sheets.length} sheet Excel.`,
-          "success",
-        );
+          'success',
+        )
       } else {
         showMessage(
-          "File berhasil dibaca, tetapi backend tidak menemukan sheet yang dapat diproses.",
-          "warning",
-        );
+          'File berhasil dibaca, tetapi backend tidak menemukan sheet yang dapat diproses.',
+          'warning',
+        )
       }
     } catch (error) {
-      console.error(error);
-      setFile(null);
-      setExcelSheets([]);
-      setSelectedSheet("");
+      console.error(error)
+      setFile(null)
+      setExcelSheets([])
+      setSelectedSheet('')
       showMessage(
-        error.message || "Gagal membaca struktur file Excel.",
-        "warning",
-      );
+        error.message || 'Gagal membaca struktur file Excel.',
+        'warning',
+      )
     } finally {
-      setProcessing(false);
+      setProcessing(false)
     }
   }
 
   async function handleFileInput(event) {
-    await handleExcelFile(event.target.files?.[0]);
+    await handleExcelFile(event.target.files?.[0])
   }
 
   async function handleDrop(event) {
-    event.preventDefault();
-    setDragging(false);
+    event.preventDefault()
+    setDragging(false)
 
-    await handleExcelFile(event.dataTransfer.files?.[0]);
+    await handleExcelFile(event.dataTransfer.files?.[0])
   }
 
   async function handleSubmit(event) {
-    event.preventDefault();
+    event.preventDefault()
 
     if (!file) {
-      showMessage("Silakan pilih file XLS/XLSX terlebih dahulu.", "warning");
-      return;
+      showMessage('Silakan pilih file XLS/XLSX terlebih dahulu.', 'warning')
+      return
     }
 
     if (!tableName.trim()) {
-      showMessage("Nama tabel wajib ditentukan.", "warning");
-      return;
+      showMessage('Nama tabel wajib ditentukan.', 'warning')
+      return
     }
 
     if (!selectedBankName) {
-      showMessage("Pilih nama bank terlebih dahulu.", "warning");
-      return;
+      showMessage('Pilih nama bank terlebih dahulu.', 'warning')
+      return
     }
 
     if (!selectedSheet) {
-      showMessage("Pilih sheet Excel yang akan diproses.", "warning");
-      return;
+      showMessage('Pilih sheet Excel yang akan diproses.', 'warning')
+      return
     }
 
     if (!year || String(year).length !== 4) {
-      showMessage("Tahun harus menggunakan format YYYY.", "warning");
-      return;
+      showMessage('Tahun harus menggunakan format YYYY.', 'warning')
+      return
     }
 
-    if (tableMode === "new" && (!headerRow || Number(headerRow) < 1)) {
-      showMessage("Baris Header minimal bernilai 1.", "warning");
-      return;
+    if (tableMode === 'new' && (!headerRow || Number(headerRow) < 1)) {
+      showMessage('Baris Header minimal bernilai 1.', 'warning')
+      return
     }
 
     if (
-      tableMode === "existing" &&
+      tableMode === 'existing' &&
       (!firstDataRow || Number(firstDataRow) < 1)
     ) {
-      showMessage("Baris Pertama Data minimal bernilai 1.", "warning");
-      return;
+      showMessage('Baris Pertama Data minimal bernilai 1.', 'warning')
+      return
     }
 
     try {
-      setProcessing(true);
-      setPreviewData(null);
-      setSaveResult(null);
-      setDuplicateWarning(null);
-      showMessage("", "warning");
+      setProcessing(true)
+      setPreviewData(null)
+      setSaveResult(null)
+      setDuplicateWarning(null)
+      showMessage('', 'warning')
 
       const result = await previewExcel({
         file,
@@ -478,83 +490,81 @@ function UploadData() {
         sheetName: selectedSheet,
         headerRow: Number(headerRow),
         firstDataRow: Number(firstDataRow),
-      });
+      })
 
-      console.log("PREVIEW RESPONSE:", result);
+      console.log('PREVIEW RESPONSE:', result)
 
-      const normalizedResult = normalizePreviewResponse(result);
-      setPreviewData(normalizedResult);
-      setDeletedRowIds([]);
-      setSelectedRowIds([]);
-      setCurrentPage(1);
+      const normalizedResult = normalizePreviewResponse(result)
+      setPreviewData(normalizedResult)
+      setDeletedRowIds([])
+      setSelectedRowIds([])
+      setCurrentPage(1)
 
-      const initialMapping = {};
-      (normalizedResult.columns || []).forEach((column) => {
-        initialMapping[column] =
-          normalizeSqlIdentifier(column) ||
-          `kolom_${Object.keys(initialMapping).length + 1}`;
-      });
-      setColumnMapping(initialMapping);
+      const initialMapping = {}
+      ;(normalizedResult.columns || []).forEach((column) => {
+        initialMapping[column] = normalizeSqlIdentifier(column) || `kolom_${Object.keys(initialMapping).length + 1}`
+      })
+      setColumnMapping(initialMapping)
 
       showMessage(
         `Preview berhasil dibuat${
           result?.row_count !== undefined
             ? ` untuk ${result.row_count} baris data`
-            : ""
+            : ''
         }.`,
-        "success",
-      );
+        'success',
+      )
     } catch (error) {
-      console.error(error);
+      console.error(error)
       showMessage(
-        error.message || "Gagal memproses dan membuat preview data.",
-        "warning",
-      );
+        error.message || 'Gagal memproses dan membuat preview data.',
+        'warning',
+      )
     } finally {
-      setProcessing(false);
+      setProcessing(false)
     }
   }
 
   function resetFile() {
-    setFile(null);
-    setExcelSheets([]);
-    setSelectedSheet("");
-    setPreviewData(null);
-    setDeletedRowIds([]);
-    setSelectedRowIds([]);
-    setColumnMapping({});
-    setCurrentPage(1);
-    setSaveResult(null);
-    setDuplicateWarning(null);
-    showMessage("", "warning");
+    setFile(null)
+    setExcelSheets([])
+    setSelectedSheet('')
+    setPreviewData(null)
+    setDeletedRowIds([])
+    setSelectedRowIds([])
+    setColumnMapping({})
+    setCurrentPage(1)
+    setSaveResult(null)
+    setDuplicateWarning(null)
+    showMessage('', 'warning')
 
     if (inputRef.current) {
-      inputRef.current.value = "";
+      inputRef.current.value = ''
     }
   }
 
   function deleteSingleRow(rowId) {
     setDeletedRowIds((current) =>
       current.includes(rowId) ? current : [...current, rowId],
-    );
-    setSelectedRowIds((current) => current.filter((id) => id !== rowId));
-    setCurrentPage(1);
+    )
+    setSelectedRowIds((current) => current.filter((id) => id !== rowId))
+    setCurrentPage(1)
   }
 
   function deleteSelectedRows() {
-    if (selectedRowIds.length === 0) return;
+    if (selectedRowIds.length === 0) return
 
     setDeletedRowIds((current) => [
       ...new Set([...current, ...selectedRowIds]),
-    ]);
-    setSelectedRowIds([]);
-    setCurrentPage(1);
+    ])
+    setSelectedRowIds([])
+    setCurrentPage(1)
   }
 
   function resetDeletedRows() {
-    setDeletedRowIds([]);
-    setSelectedRowIds([]);
-    setCurrentPage(1);
+    setDeletedRowIds([])
+    setSelectedRowIds([])
+    setCurrentPage(1)
   }
 
   function toggleRowSelection(rowId) {
@@ -562,89 +572,86 @@ function UploadData() {
       current.includes(rowId)
         ? current.filter((id) => id !== rowId)
         : [...current, rowId],
-    );
+    )
   }
 
   function toggleCurrentPageSelection() {
-    const pageIds = paginatedRows.map((row) => row.__row_id);
-    const allSelected =
-      pageIds.length > 0 && pageIds.every((id) => selectedRowIds.includes(id));
+    const pageIds = paginatedRows.map((row) => row.__row_id)
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedRowIds.includes(id))
 
     if (allSelected) {
       setSelectedRowIds((current) =>
         current.filter((id) => !pageIds.includes(id)),
-      );
-      return;
+      )
+      return
     }
 
-    setSelectedRowIds((current) => [...new Set([...current, ...pageIds])]);
+    setSelectedRowIds((current) => [...new Set([...current, ...pageIds])])
   }
 
   function updateColumnName(originalColumn, value) {
     setColumnMapping((current) => ({
       ...current,
       [originalColumn]: value,
-    }));
+    }))
   }
 
   function normalizeColumnName(originalColumn) {
     setColumnMapping((current) => ({
       ...current,
       [originalColumn]: normalizeSqlIdentifier(current[originalColumn]),
-    }));
+    }))
   }
 
   function buildEffectiveColumnMapping() {
-    const effectiveColumnMapping = {};
+    const effectiveColumnMapping = {}
 
-    if (tableMode === "new") {
-      (previewData?.columns || []).forEach((column) => {
-        const mappedName = String(columnMapping[column] ?? column).trim();
+    if (tableMode === 'new') {
+      ;(previewData?.columns || []).forEach((column) => {
+        const mappedName = String(columnMapping[column] ?? column).trim()
 
-        if (
-          ["bank_id", "bulan", "tahun"].includes(String(column).toLowerCase())
-        ) {
-          return;
+        if (['bank_id', 'bulan', 'tahun'].includes(String(column).toLowerCase())) {
+          return
         }
 
         if (mappedName && mappedName !== String(column)) {
-          effectiveColumnMapping[column] = mappedName;
+          effectiveColumnMapping[column] = mappedName
         }
-      });
+      })
     }
 
-    return effectiveColumnMapping;
+    return effectiveColumnMapping
   }
 
   function validateBeforeSave() {
     if (!previewData || !file) {
-      showMessage("Preview data belum tersedia.", "warning");
-      return false;
+      showMessage('Preview data belum tersedia.', 'warning')
+      return false
     }
 
     if (activePreviewRows.length === 0) {
-      showMessage("Tidak ada row yang dapat disimpan.", "warning");
-      return false;
+      showMessage('Tidak ada row yang dapat disimpan.', 'warning')
+      return false
     }
 
-    if (tableMode === "new" && !columnValidation.valid) {
+    if (tableMode === 'new' && !columnValidation.valid) {
       showMessage(
-        "Masih terdapat nama kolom yang tidak valid. Perbaiki terlebih dahulu.",
-        "warning",
-      );
-      return false;
+        'Masih terdapat nama kolom yang tidak valid. Perbaiki terlebih dahulu.',
+        'warning',
+      )
+      return false
     }
 
-    return true;
+    return true
   }
 
-  async function performDatabaseSave(duplicateAction = "block") {
-    const effectiveColumnMapping = buildEffectiveColumnMapping();
+  async function performDatabaseSave(duplicateAction = 'block') {
+    const effectiveColumnMapping = buildEffectiveColumnMapping()
 
     try {
-      setSaving(true);
-      setSaveResult(null);
-      showMessage("", "warning");
+      setSaving(true)
+      setSaveResult(null)
+      showMessage('', 'warning')
 
       const result = await saveExcel({
         file,
@@ -659,108 +666,108 @@ function UploadData() {
         deletedRows: deletedRowIds,
         columnMapping: effectiveColumnMapping,
         duplicateAction,
-      });
+      })
 
-      setSaveResult(result);
-      setDuplicateWarning(null);
+      setSaveResult(result)
+      setDuplicateWarning(null)
 
-      await loadExistingTables({ silent: true });
+      await loadExistingTables({ silent: true })
 
       showMessage(
         `${result.inserted_rows ?? activePreviewRows.length} row berhasil disimpan ke tabel ${result.table_name ?? tableName}.`,
-        "success",
-      );
+        'success',
+      )
     } catch (error) {
-      console.error(error);
+      console.error(error)
       showMessage(
-        error.message || "Gagal menyimpan data ke database.",
-        "warning",
-      );
+        error.message || 'Gagal menyimpan data ke database.',
+        'warning',
+      )
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   async function handleSaveToDatabase() {
-    if (!validateBeforeSave()) return;
+    if (!validateBeforeSave()) return
 
-    if (tableMode === "existing") {
+    if (tableMode === 'existing') {
       try {
-        setSaving(true);
-        showMessage("", "warning");
+        setSaving(true)
+        showMessage('', 'warning')
 
         const periodResult = await checkPeriod({
           tableName: tableName.trim(),
           bankName: selectedBankName,
           month: Number(month),
           year: Number(year),
-        });
+        })
 
         if (periodResult.exists) {
-          setDuplicateWarning(periodResult);
-          return;
+          setDuplicateWarning(periodResult)
+          return
         }
       } catch (error) {
-        console.error(error);
+        console.error(error)
         showMessage(
-          error.message || "Gagal memeriksa periode existing.",
-          "warning",
-        );
-        return;
+          error.message || 'Gagal memeriksa periode existing.',
+          'warning',
+        )
+        return
       } finally {
-        setSaving(false);
+        setSaving(false)
       }
     }
 
     const confirmationText = [
-      "Simpan data ke database?",
-      "",
+      'Simpan data ke database?',
+      '',
       `Tabel: ${tableName}`,
       `Bank: ${selectedBankName}`,
-      `Mode: ${tableMode === "new" ? "Buat tabel baru" : "Append ke tabel existing"}`,
+      `Mode: ${tableMode === 'new' ? 'Buat tabel baru' : 'Append ke tabel existing'}`,
       `Periode: ${selectedMonthLabel} ${year}`,
       `${
-        tableMode === "new"
+        tableMode === 'new'
           ? `Baris Header: ${headerRow}`
           : `Baris Pertama Data: ${firstDataRow}`
       }`,
       `Data awal: ${previewData.row_count ?? previewData.preview?.length ?? 0} row`,
       `Dihapus: ${deletedRowIds.length} row`,
       `Akan disimpan: ${activePreviewRows.length} row`,
-    ].join("\n");
+    ].join('\n')
 
     if (!window.confirm(confirmationText)) {
-      return;
+      return
     }
 
-    await performDatabaseSave("block");
+    await performDatabaseSave('block')
   }
 
   async function handleDuplicateAction(action) {
-    if (action === "cancel") {
-      setDuplicateWarning(null);
-      return;
+    if (action === 'cancel') {
+      setDuplicateWarning(null)
+      return
     }
 
     const actionLabel =
-      action === "replace"
-        ? "menghapus data periode lama dan menggantinya dengan data upload baru"
-        : "menambahkan data upload baru tanpa menghapus data periode lama";
+      action === 'replace'
+        ? 'menghapus data periode lama dan menggantinya dengan data upload baru'
+        : 'menambahkan data upload baru tanpa menghapus data periode lama'
 
     const confirmed = window.confirm(
       `Anda akan ${actionLabel}.\n\n` +
-        `Tabel: ${tableName}\n` +
-        `Bank: ${duplicateWarning?.bank_name || selectedBankName}\n` +
-        `Periode: ${selectedMonthLabel} ${year}\n` +
-        `Data existing: ${duplicateWarning?.row_count ?? 0} row\n` +
-        `Data upload: ${activePreviewRows.length} row\n\n` +
-        "Lanjutkan?",
-    );
+      `Tabel: ${tableName}\n` +
+      `Bank: ${duplicateWarning?.bank_name || selectedBankName}\n` +
+      `Periode: ${selectedMonthLabel} ${year}\n` +
+      `Data existing: ${duplicateWarning?.row_count ?? 0} row\n` +
+      `Data upload: ${activePreviewRows.length} row\n\n` +
+      'Lanjutkan?',
+    )
 
-    if (!confirmed) return;
+    if (!confirmed) return
 
-    setDuplicateWarning(null);
-    await performDatabaseSave(action);
+    setDuplicateWarning(null)
+    await performDatabaseSave(action)
   }
 
   return (
@@ -777,12 +784,12 @@ function UploadData() {
         {message && (
           <div
             className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${
-              messageType === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-amber-200 bg-amber-50 text-amber-700"
+              messageType === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-amber-200 bg-amber-50 text-amber-700'
             }`}
           >
-            {messageType === "success" ? (
+            {messageType === 'success' ? (
               <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
             ) : (
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -803,8 +810,7 @@ function UploadData() {
               </h2>
 
               <p className="mt-1 text-xs text-slate-400">
-                Upload file XLS/XLSX dan tentukan apakah data akan masuk ke
-                tabel baru atau tabel yang sudah ada.
+                Upload file XLS/XLSX dan tentukan apakah data akan masuk ke tabel baru atau tabel yang sudah ada.
               </p>
             </div>
 
@@ -822,19 +828,19 @@ function UploadData() {
                 {!file ? (
                   <div
                     onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragging(true);
+                      event.preventDefault()
+                      setDragging(true)
                     }}
                     onDragLeave={() => setDragging(false)}
                     onDrop={handleDrop}
                     onClick={() => {
-                      if (!processing) inputRef.current?.click();
+                      if (!processing) inputRef.current?.click()
                     }}
                     className={`tp-upload-dropzone cursor-pointer rounded-xl border border-dashed px-5 py-8 text-center transition ${
                       dragging
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50"
-                    } ${processing ? "pointer-events-none opacity-70" : ""}`}
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50'
+                    } ${processing ? 'pointer-events-none opacity-70' : ''}`}
                   >
                     <input
                       ref={inputRef}
@@ -854,29 +860,26 @@ function UploadData() {
 
                     <p className="mt-3 text-sm font-extrabold text-slate-700">
                       {processing
-                        ? "Membaca struktur Excel..."
-                        : "Drag & Drop file di sini"}
+                        ? 'Membaca struktur Excel...'
+                        : 'Drag & Drop file di sini'}
                     </p>
 
                     <p className="mt-1 text-[11px] text-slate-400">
                       {processing
-                        ? "Backend sedang mendeteksi daftar sheet."
-                        : "atau klik untuk memilih file"}
+                        ? 'Backend sedang mendeteksi daftar sheet.'
+                        : 'atau klik untuk memilih file'}
                     </p>
                   </div>
                 ) : (
                   <div className="tp-upload-selected-file rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex items-center gap-3">
                         <div className="rounded-xl bg-white p-2 text-emerald-600">
                           <FileSpreadsheet size={20} />
                         </div>
 
-                        <div className="min-w-0 max-w-[210px]">
-                          <p
-                            className="truncate text-sm font-bold text-slate-700"
-                            title={file.name}
-                          >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-slate-800">
                             {file.name}
                           </p>
 
@@ -884,7 +887,7 @@ function UploadData() {
                             {fileSize}
                             {excelSheets.length > 0
                               ? ` • ${excelSheets.length} sheet terdeteksi`
-                              : ""}
+                              : ''}
                           </p>
                         </div>
                       </div>
@@ -909,8 +912,7 @@ function UploadData() {
                     Tentukan Tabel Tujuan
                   </p>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Pilih mode tabel, lalu tentukan nama tabel yang akan
-                    digunakan untuk penyimpanan data.
+                    Pilih mode tabel, lalu tentukan nama tabel yang akan digunakan untuk penyimpanan data.
                   </p>
                 </div>
 
@@ -920,7 +922,7 @@ function UploadData() {
                       Mode Tabel
                     </label>
 
-                    <Dropdown
+                    <CaffeineDropdown
                       options={tableModeOptions}
                       value={
                         tableModeOptions.find(
@@ -928,14 +930,14 @@ function UploadData() {
                         ) || null
                       }
                       onChange={(option) => {
-                        const nextMode = option?.value || "existing";
-                        setTableMode(nextMode);
-                        setTableName("");
-                        setPreviewData(null);
-                        setSaveResult(null);
+                        const nextMode = option?.value || 'existing'
+                        setTableMode(nextMode)
+                        setTableName('')
+                        setPreviewData(null)
+                        setSaveResult(null)
 
-                        if (nextMode === "existing") {
-                          loadExistingTables({ silent: true });
+                        if (nextMode === 'existing') {
+                          loadExistingTables({ silent: true })
                         }
                       }}
                       searchable={false}
@@ -950,9 +952,9 @@ function UploadData() {
                       Nama Tabel
                     </label>
 
-                    {tableMode === "existing" ? (
+                    {tableMode === 'existing' ? (
                       <div className="space-y-2">
-                        <Dropdown
+                        <CaffeineDropdown
                           options={existingTableOptions}
                           value={
                             existingTableOptions.find(
@@ -960,20 +962,18 @@ function UploadData() {
                             ) || null
                           }
                           onChange={(option) => {
-                            setTableName(option?.value || "");
-                            setPreviewData(null);
-                            setSaveResult(null);
+                            setTableName(option?.value || '')
+                            setPreviewData(null)
+                            setSaveResult(null)
                           }}
                           placeholder={
                             loadingTables
-                              ? "Memuat tabel database..."
+                              ? 'Memuat tabel database...'
                               : existingTables.length === 0
-                                ? "Belum ada tabel di database"
-                                : "Pilih tabel..."
+                                ? 'Belum ada tabel di database'
+                                : 'Pilih tabel...'
                           }
-                          disabled={
-                            loadingTables || existingTables.length === 0
-                          }
+                          disabled={loadingTables || existingTables.length === 0}
                           searchable={false}
                           clearable={false}
                           className="tp-vibe-dropdown"
@@ -983,8 +983,8 @@ function UploadData() {
                           <p
                             className={`text-[10px] ${
                               tableLoadError
-                                ? "font-semibold text-red-500"
-                                : "text-slate-400"
+                                ? 'font-semibold text-red-500'
+                                : 'text-slate-400'
                             }`}
                           >
                             {tableLoadError
@@ -998,7 +998,7 @@ function UploadData() {
                             disabled={loadingTables}
                             className="text-[10px] font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40"
                           >
-                            {loadingTables ? "Memuat..." : "Refresh"}
+                            {loadingTables ? 'Memuat...' : 'Refresh'}
                           </button>
                         </div>
                       </div>
@@ -1006,8 +1006,8 @@ function UploadData() {
                       <input
                         value={tableName}
                         onChange={(event) => {
-                          setTableName(event.target.value);
-                          setPreviewData(null);
+                          setTableName(event.target.value)
+                          setPreviewData(null)
                         }}
                         placeholder="contoh: kredit_debitur"
                         className="tp-native-control w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-blue-500"
@@ -1032,7 +1032,7 @@ function UploadData() {
                   Nama Bank
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={bankOptions}
                   value={
                     bankOptions.find(
@@ -1040,16 +1040,16 @@ function UploadData() {
                     ) || null
                   }
                   onChange={(option) => {
-                    setSelectedBankName(option?.value || "");
-                    setPreviewData(null);
-                    setSaveResult(null);
+                    setSelectedBankName(option?.value || '')
+                    setPreviewData(null)
+                    setSaveResult(null)
                   }}
                   placeholder={
                     loadingBanks
-                      ? "Memuat master bank..."
+                      ? 'Memuat master bank...'
                       : banks.length === 0
-                        ? "Master bank belum tersedia"
-                        : "Pilih bank..."
+                        ? 'Master bank belum tersedia'
+                        : 'Pilih bank...'
                   }
                   disabled={loadingBanks || banks.length === 0}
                   searchable
@@ -1061,8 +1061,8 @@ function UploadData() {
                   <p
                     className={`text-[10px] ${
                       bankLoadError
-                        ? "font-semibold text-red-500"
-                        : "text-slate-400"
+                        ? 'font-semibold text-red-500'
+                        : 'text-slate-400'
                     }`}
                   >
                     {bankLoadError
@@ -1076,7 +1076,7 @@ function UploadData() {
                     disabled={loadingBanks}
                     className="text-[10px] font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40"
                   >
-                    {loadingBanks ? "Memuat..." : "Refresh"}
+                    {loadingBanks ? 'Memuat...' : 'Refresh'}
                   </button>
                 </div>
               </div>
@@ -1087,7 +1087,7 @@ function UploadData() {
                   Bulan
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={monthOptions}
                   value={
                     monthOptions.find(
@@ -1095,8 +1095,8 @@ function UploadData() {
                     ) || null
                   }
                   onChange={(option) => {
-                    setMonth(Number(option?.value || 1));
-                    setPreviewData(null);
+                    setMonth(Number(option?.value || 1))
+                    setPreviewData(null)
                   }}
                   searchable={false}
                   clearable={false}
@@ -1109,7 +1109,7 @@ function UploadData() {
                   Tahun (YYYY)
                 </label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={yearOptions}
                   value={
                     yearOptions.find(
@@ -1117,8 +1117,8 @@ function UploadData() {
                     ) || null
                   }
                   onChange={(option) => {
-                    setYear(Number(option?.value ?? new Date().getFullYear()));
-                    setPreviewData(null);
+                    setYear(Number(option?.value ?? new Date().getFullYear()))
+                    setPreviewData(null)
                   }}
                   searchable={false}
                   clearable={false}
@@ -1135,8 +1135,7 @@ function UploadData() {
               </h2>
 
               <p className="mt-1 text-xs text-slate-400">
-                Atur sheet dan posisi header/data, lalu periksa ringkasan
-                metadata sebelum membuat preview.
+                Atur sheet dan posisi header/data, lalu periksa ringkasan metadata sebelum membuat preview.
               </p>
             </div>
 
@@ -1148,7 +1147,7 @@ function UploadData() {
                       Nama Sheet
                     </label>
 
-                    <Dropdown
+                    <CaffeineDropdown
                       options={sheetOptions}
                       value={
                         sheetOptions.find(
@@ -1156,15 +1155,15 @@ function UploadData() {
                         ) || null
                       }
                       onChange={(option) => {
-                        setSelectedSheet(option?.value || "");
-                        setPreviewData(null);
-                        setSaveResult(null);
-                        setDuplicateWarning(null);
+                        setSelectedSheet(option?.value || '')
+                        setPreviewData(null)
+                        setSaveResult(null)
+                        setDuplicateWarning(null)
                       }}
                       placeholder={
                         excelSheets.length === 0
-                          ? "Upload file terlebih dahulu"
-                          : "Pilih sheet..."
+                          ? 'Upload file terlebih dahulu'
+                          : 'Pilih sheet...'
                       }
                       disabled={!file || excelSheets.length === 0 || processing}
                       searchable={false}
@@ -1175,18 +1174,16 @@ function UploadData() {
 
                   <div>
                     <label className="mb-1.5 block text-xs font-bold text-slate-600">
-                      {tableMode === "new"
-                        ? "Baris Header"
-                        : "Baris Pertama Data"}
+                      {tableMode === 'new' ? 'Baris Header' : 'Baris Pertama Data'}
                     </label>
 
-                    {tableMode === "new" ? (
+                    {tableMode === 'new' ? (
                       <NumberField
                         value={Number(headerRow) || null}
                         onChange={(value) => {
-                          setHeaderRow(value ?? 1);
-                          setPreviewData(null);
-                          setSaveResult(null);
+                          setHeaderRow(value ?? 1)
+                          setPreviewData(null)
+                          setSaveResult(null)
                         }}
                         min={1}
                         step={1}
@@ -1198,10 +1195,10 @@ function UploadData() {
                       <NumberField
                         value={Number(firstDataRow) || null}
                         onChange={(value) => {
-                          setFirstDataRow(value ?? 1);
-                          setPreviewData(null);
-                          setSaveResult(null);
-                          setDuplicateWarning(null);
+                          setFirstDataRow(value ?? 1)
+                          setPreviewData(null)
+                          setSaveResult(null)
+                          setDuplicateWarning(null)
                         }}
                         min={1}
                         step={1}
@@ -1212,9 +1209,9 @@ function UploadData() {
                     )}
 
                     <p className="mt-1.5 text-[10px] text-slate-400">
-                      {tableMode === "new"
-                        ? "Contoh: isi 17 jika nama kolom berada pada baris Excel ke-17."
-                        : "Contoh: isi 18 jika data pertama dimulai pada baris Excel ke-18. Nama kolom tidak dibaca dari file."}
+                      {tableMode === 'new'
+                        ? 'Contoh: isi 17 jika nama kolom berada pada baris Excel ke-17.'
+                        : 'Contoh: isi 18 jika data pertama dimulai pada baris Excel ke-18. Nama kolom tidak dibaca dari file.'}
                     </p>
                   </div>
                 </div>
@@ -1229,46 +1226,44 @@ function UploadData() {
                   <div>
                     <p className="text-slate-400">Table</p>
                     <p className="mt-1 font-bold text-slate-800">
-                      {tableName || "-"}
+                      {tableName || '-'}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Mode</p>
                     <p className="mt-1 font-bold text-slate-800">
-                      {tableMode === "new"
-                        ? "Buat tabel baru"
-                        : "Pilih tabel existing"}
+                      {tableMode === 'new' ? 'Buat tabel baru' : 'Pilih tabel existing'}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Bank</p>
                     <p className="mt-1 truncate font-bold text-slate-800">
-                      {selectedBankName || "-"}
+                      {selectedBankName || '-'}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Periode</p>
                     <p className="mt-1 font-bold text-slate-800">
-                      {selectedMonthLabel} {year || "-"}
+                      {selectedMonthLabel} {year || '-'}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Sheet</p>
                     <p className="mt-1 truncate font-bold text-slate-800">
-                      {selectedSheet || "-"}
+                      {selectedSheet || '-'}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">
-                      {tableMode === "new" ? "Header" : "Data Mulai"}
+                      {tableMode === 'new' ? 'Header' : 'Data Mulai'}
                     </p>
                     <p className="mt-1 font-bold text-slate-800">
-                      Baris {tableMode === "new" ? headerRow : firstDataRow}
+                      Baris {tableMode === 'new' ? headerRow : firstDataRow}
                     </p>
                   </div>
                 </div>
@@ -1289,7 +1284,7 @@ function UploadData() {
                   <UploadCloud size={16} />
                 )}
 
-                {processing ? "Memproses..." : "Proses & Preview Data"}
+                {processing ? 'Memproses...' : 'Proses & Preview Data'}
               </span>
             </Button>
           </div>
@@ -1308,15 +1303,13 @@ function UploadData() {
                   </h2>
 
                   <p className="mt-1 text-xs text-slate-400">
-                    Hapus baris yang tidak ingin disimpan. Perubahan nama kolom
-                    hanya tersedia saat membuat tabel baru.
+                    Hapus baris yang tidak ingin disimpan. Perubahan nama kolom hanya tersedia saat membuat tabel baru.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-[11px] font-bold">
                   <span className="rounded-lg bg-slate-100 px-3 py-2 text-slate-600">
-                    {previewData.row_count ?? previewData.preview?.length ?? 0}{" "}
-                    baris awal
+                    {previewData.row_count ?? previewData.preview?.length ?? 0} baris awal
                   </span>
 
                   <span className="rounded-lg bg-red-50 px-3 py-2 text-red-600">
@@ -1338,7 +1331,7 @@ function UploadData() {
               <div>
                 <p className="text-slate-400">File</p>
                 <p className="mt-1 truncate font-bold text-slate-700">
-                  {previewData.filename || file?.name || "-"}
+                  {previewData.filename || file?.name || '-'}
                 </p>
               </div>
 
@@ -1353,7 +1346,7 @@ function UploadData() {
                 <p className="text-slate-400">Bank</p>
                 <p className="mt-1 truncate font-bold text-slate-700">
                   {previewData.bank_name || selectedBankName}
-                  {previewData.bank_id ? ` (${previewData.bank_id})` : ""}
+                  {previewData.bank_id ? ` (${previewData.bank_id})` : ''}
                 </p>
               </div>
 
@@ -1367,9 +1360,7 @@ function UploadData() {
               <div>
                 <p className="text-slate-400">Mode</p>
                 <p className="mt-1 font-bold text-slate-700">
-                  {tableMode === "new"
-                    ? "Buat tabel baru"
-                    : "Append ke tabel existing"}
+                  {tableMode === 'new' ? 'Buat tabel baru' : 'Append ke tabel existing'}
                 </p>
               </div>
             </div>
@@ -1393,23 +1384,21 @@ function UploadData() {
                       </div>
 
                       <p className="mt-1 text-[11px] leading-4 text-slate-400">
-                        {tableMode === "new"
-                          ? "Periksa nama kolom sebelum tabel dibuat."
-                          : "Header mengikuti schema tabel existing."}
+                        {tableMode === 'new'
+                          ? 'Periksa nama kolom sebelum tabel dibuat.'
+                          : 'Header mengikuti schema tabel existing.'}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {tableMode === "new" ? (
+                {tableMode === 'new' ? (
                   <div className="max-h-[780px] overflow-y-auto p-3">
                     <div className="space-y-2">
                       {(previewData.columns || []).map((column, index) => {
-                        const isSystemColumn = [
-                          "bank_id",
-                          "bulan",
-                          "tahun",
-                        ].includes(String(column).toLowerCase());
+                        const isSystemColumn = ['bank_id', 'bulan', 'tahun'].includes(
+                          String(column).toLowerCase(),
+                        )
 
                         return (
                           <div
@@ -1448,7 +1437,7 @@ function UploadData() {
                               </div>
 
                               <input
-                                value={columnMapping[column] ?? ""}
+                                value={columnMapping[column] ?? ''}
                                 onChange={(event) =>
                                   updateColumnName(column, event.target.value)
                                 }
@@ -1456,30 +1445,28 @@ function UploadData() {
                                 disabled={isSystemColumn}
                                 className={`tp-native-control mt-1 h-8 w-full rounded-md border px-2.5 text-[11px] font-medium outline-none ${
                                   isSystemColumn
-                                    ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                                    ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                                     : columnValidation.errors[column]
-                                      ? "border-red-300 bg-white text-red-700 focus:border-red-500"
-                                      : "border-slate-200 bg-white text-slate-700 focus:border-blue-500"
+                                      ? 'border-red-300 bg-white text-red-700 focus:border-red-500'
+                                      : 'border-slate-200 bg-white text-slate-700 focus:border-blue-500'
                                 }`}
                               />
 
-                              {columnValidation.errors[column] &&
-                                !isSystemColumn && (
-                                  <p className="mt-1 text-[9px] font-medium leading-3 text-red-500">
-                                    {columnValidation.errors[column]}
-                                  </p>
-                                )}
+                              {columnValidation.errors[column] && !isSystemColumn && (
+                                <p className="mt-1 text-[9px] font-medium leading-3 text-red-500">
+                                  {columnValidation.errors[column]}
+                                </p>
+                              )}
                             </div>
                           </div>
-                        );
+                        )
                       })}
                     </div>
                   </div>
                 ) : (
                   <div className="max-h-[780px] overflow-y-auto p-3">
                     <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-[10px] leading-4 text-blue-700">
-                      Header mengikuti schema tabel <strong>{tableName}</strong>
-                      .
+                      Header mengikuti schema tabel <strong>{tableName}</strong>.
                     </div>
 
                     <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -1517,10 +1504,7 @@ function UploadData() {
 
                   <div className="flex flex-wrap gap-2 text-[10px] font-medium">
                     <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600">
-                      {previewData.row_count ??
-                        previewData.preview?.length ??
-                        0}{" "}
-                      baris awal
+                      {previewData.row_count ?? previewData.preview?.length ?? 0} baris awal
                     </span>
                     <span className="rounded-lg bg-red-50 px-2.5 py-1.5 text-red-600">
                       {deletedRowIds.length} dihapus
@@ -1540,10 +1524,7 @@ function UploadData() {
                       className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Trash2 size={14} />
-                      Hapus{" "}
-                      {selectedRowIds.length > 0
-                        ? `${selectedRowIds.length} Baris`
-                        : "Baris Terpilih"}
+                      Hapus {selectedRowIds.length > 0 ? `${selectedRowIds.length} Baris` : 'Baris Terpilih'}
                     </button>
 
                     <button
@@ -1592,7 +1573,7 @@ function UploadData() {
                             key={column}
                             className="whitespace-nowrap border-b border-slate-200 px-4 py-3 font-extrabold text-slate-600"
                           >
-                            {tableMode === "new"
+                            {tableMode === 'new'
                               ? columnMapping[column] || column
                               : String(column)}
                           </th>
@@ -1661,16 +1642,12 @@ function UploadData() {
 
                 <div className="flex flex-col justify-between gap-3 border-t border-slate-100 p-4 md:flex-row md:items-center">
                   <p className="text-[11px] text-slate-400">
-                    Menampilkan{" "}
+                    Menampilkan{' '}
                     {activePreviewRows.length === 0
                       ? 0
                       : (currentPage - 1) * rowsPerPage + 1}
-                    –
-                    {Math.min(
-                      currentPage * rowsPerPage,
-                      activePreviewRows.length,
-                    )}{" "}
-                    dari {activePreviewRows.length} row aktif.
+                    –{Math.min(currentPage * rowsPerPage, activePreviewRows.length)} dari{' '}
+                    {activePreviewRows.length} row aktif.
                   </p>
 
                   <div className="flex items-center gap-2">
@@ -1705,7 +1682,9 @@ function UploadData() {
                     <button
                       type="button"
                       onClick={() =>
-                        setCurrentPage((page) => Math.min(totalPages, page + 1))
+                        setCurrentPage((page) =>
+                          Math.min(totalPages, page + 1),
+                        )
                       }
                       disabled={currentPage >= totalPages}
                       className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -1734,11 +1713,11 @@ function UploadData() {
                       {activePreviewRows.length} row siap disimpan
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400">
-                      {tableMode === "new"
+                      {tableMode === 'new'
                         ? columnValidation.valid
-                          ? "Nama kolom tabel baru sudah valid."
-                          : "Perbaiki nama kolom yang masih tidak valid sebelum menyimpan."
-                        : "Data akan di-append mengikuti schema tabel existing."}
+                          ? 'Nama kolom tabel baru sudah valid.'
+                          : 'Perbaiki nama kolom yang masih tidak valid sebelum menyimpan.'
+                        : 'Data akan di-append mengikuti schema tabel existing.'}
                     </p>
                   </div>
 
@@ -1748,7 +1727,7 @@ function UploadData() {
                     disabled={
                       saving ||
                       activePreviewRows.length === 0 ||
-                      (tableMode === "new" && !columnValidation.valid)
+                      (tableMode === 'new' && !columnValidation.valid)
                     }
                     className="tp-vibe-primary-action"
                   >
@@ -1758,7 +1737,7 @@ function UploadData() {
                       ) : (
                         <Save size={15} />
                       )}
-                      {saving ? "Menyimpan..." : "Simpan ke Database"}
+                      {saving ? 'Menyimpan...' : 'Simpan ke Database'}
                     </span>
                   </Button>
                 </div>
@@ -1828,13 +1807,12 @@ function UploadData() {
 
                 <div className="space-y-2 text-xs text-slate-600">
                   <p>
-                    <strong>Ganti Data Periode</strong> akan menghapus seluruh
-                    data untuk bank dan periode tersebut, kemudian memasukkan
-                    data upload baru.
+                    <strong>Ganti Data Periode</strong> akan menghapus seluruh data
+                    untuk bank dan periode tersebut, kemudian memasukkan data upload baru.
                   </p>
                   <p>
-                    <strong>Tetap Tambahkan</strong> akan mempertahankan data
-                    existing dan menambahkan data upload sebagai row baru.
+                    <strong>Tetap Tambahkan</strong> akan mempertahankan data existing
+                    dan menambahkan data upload sebagai row baru.
                   </p>
                 </div>
               </div>
@@ -1842,7 +1820,7 @@ function UploadData() {
               <div className="flex flex-col-reverse gap-2 border-t border-slate-100 p-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => handleDuplicateAction("cancel")}
+                  onClick={() => handleDuplicateAction('cancel')}
                   disabled={saving}
                   className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -1851,7 +1829,7 @@ function UploadData() {
 
                 <button
                   type="button"
-                  onClick={() => handleDuplicateAction("append")}
+                  onClick={() => handleDuplicateAction('append')}
                   disabled={saving}
                   className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                 >
@@ -1860,7 +1838,7 @@ function UploadData() {
 
                 <button
                   type="button"
-                  onClick={() => handleDuplicateAction("replace")}
+                  onClick={() => handleDuplicateAction('replace')}
                   disabled={saving}
                   className="rounded-xl bg-amber-500 px-4 py-2.5 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50"
                 >
@@ -1888,8 +1866,7 @@ function UploadData() {
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  {saveResult.message ||
-                    "Data berhasil disimpan ke PostgreSQL."}
+                  {saveResult.message || 'Data berhasil disimpan ke PostgreSQL.'}
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-xs md:grid-cols-7">
@@ -1904,22 +1881,20 @@ function UploadData() {
                     <p className="text-slate-400">Bank</p>
                     <p className="mt-1 truncate font-bold text-slate-800">
                       {saveResult.bank_name || selectedBankName}
-                      {saveResult.bank_id ? ` (${saveResult.bank_id})` : ""}
+                      {saveResult.bank_id ? ` (${saveResult.bank_id})` : ''}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Mode</p>
                     <p className="mt-1 font-bold text-slate-800">
-                      {saveResult.table_mode === "new"
-                        ? "New Table"
-                        : "Existing"}
+                      {saveResult.table_mode === 'new' ? 'New Table' : 'Existing'}
                     </p>
                     {saveResult.duplicate_action && (
                       <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
-                        {saveResult.duplicate_action === "replace"
+                        {saveResult.duplicate_action === 'replace'
                           ? `Replace ${saveResult.replaced_rows ?? 0} row lama`
-                          : "Append ke periode existing"}
+                          : 'Append ke periode existing'}
                       </p>
                     )}
                   </div>
@@ -1934,7 +1909,7 @@ function UploadData() {
                   <div>
                     <p className="text-slate-400">Data Awal</p>
                     <p className="mt-1 font-bold text-slate-800">
-                      {saveResult.original_rows ?? "-"}
+                      {saveResult.original_rows ?? '-'}
                     </p>
                   </div>
 
@@ -1948,7 +1923,7 @@ function UploadData() {
                   <div>
                     <p className="text-slate-400">Disimpan</p>
                     <p className="mt-1 font-bold text-emerald-700">
-                      {saveResult.inserted_rows ?? "-"}
+                      {saveResult.inserted_rows ?? '-'}
                     </p>
                   </div>
                 </div>
@@ -1958,7 +1933,7 @@ function UploadData() {
         )}
       </main>
     </DashboardLayout>
-  );
+  )
 }
 
-export default UploadData;
+export default UploadData

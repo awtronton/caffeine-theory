@@ -6,7 +6,6 @@ import {
 import { createPortal } from 'react-dom'
 import {
   Button,
-  Dropdown,
 } from '@vibe/core'
 import {
   AlertCircle,
@@ -28,6 +27,7 @@ import {
   Workflow,
 } from 'lucide-react'
 
+import CaffeineDropdown from '../components/ui/CaffeineDropdown'
 import DashboardLayout from '../layouts/DashboardLayout'
 import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import CardinalityHelper from '../components/schema/CardinalityHelper'
@@ -999,7 +999,7 @@ function SchemaManager() {
               <div className="tp-schema-table-select">
                 <label>Table</label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={tableOptions}
                   value={
                     tableOptions.find(
@@ -1040,7 +1040,7 @@ function SchemaManager() {
               <div className="tp-schema-filter">
                 <label>View</label>
 
-                <Dropdown
+                <CaffeineDropdown
                   options={filterOptions}
                   value={
                     filterOptions.find(
@@ -1436,7 +1436,7 @@ function SchemaManager() {
                       Source Table
                     </label>
 
-                    <Dropdown
+                    <CaffeineDropdown
                       options={tableOptions}
                       value={
                         tableOptions.find(
@@ -1468,7 +1468,7 @@ function SchemaManager() {
                       Target Table
                     </label>
 
-                    <Dropdown
+                    <CaffeineDropdown
                       options={tableOptions}
                       value={
                         tableOptions.find(
@@ -1546,7 +1546,7 @@ function SchemaManager() {
                               {index + 1}
                             </label>
 
-                            <Dropdown
+                            <CaffeineDropdown
                               options={
                                 sourceColumnOptions
                               }
@@ -1597,7 +1597,7 @@ function SchemaManager() {
                               {index + 1}
                             </label>
 
-                            <Dropdown
+                            <CaffeineDropdown
                               options={
                                 targetColumnOptions
                               }
@@ -1705,7 +1705,7 @@ function SchemaManager() {
                       Cardinality
                     </label>
 
-                    <Dropdown
+                    <CaffeineDropdown
                       options={
                         cardinalityOptions
                       }
