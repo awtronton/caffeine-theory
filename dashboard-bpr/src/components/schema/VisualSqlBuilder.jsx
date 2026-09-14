@@ -19,20 +19,29 @@ import {
   Database,
   Eye,
   EyeOff,
+  FolderOpen,
   GitBranch,
   Play,
+  Save,
   Plus,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
   Table2,
   Trash2,
+  X,
 } from 'lucide-react'
 
 import {
+  createOutputTable,
+  createSavedQuery,
+  deleteSavedQuery,
+  getSavedQuery,
   getTableDetail,
+  listSavedQueries,
   preflightQuery,
   previewQuery,
+  updateSavedQuery,
 } from '../../services/dataWarehouseService'
 import CaffeineDropdown from '../ui/CaffeineDropdown'
 
@@ -1008,6 +1017,77 @@ function VisualSqlBuilder({
   ] = useState(new Set())
   const previewRef = useRef(null)
 
+  const [
+    savedQueries,
+    setSavedQueries,
+  ] = useState([])
+  const [
+    savedQueriesState,
+    setSavedQueriesState,
+  ] = useState('loading')
+  const [
+    savedQueryError,
+    setSavedQueryError,
+  ] = useState('')
+  const [
+    selectedSavedQueryId,
+    setSelectedSavedQueryId,
+  ] = useState(null)
+  const [
+    activeSavedQueryId,
+    setActiveSavedQueryId,
+  ] = useState(null)
+  const [
+    activeSavedQuerySnapshot,
+    setActiveSavedQuerySnapshot,
+  ] = useState('')
+  const [
+    saveDialogOpen,
+    setSaveDialogOpen,
+  ] = useState(false)
+  const [
+    saveQueryName,
+    setSaveQueryName,
+  ] = useState('')
+  const [
+    saveQueryDescription,
+    setSaveQueryDescription,
+  ] = useState('')
+  const [
+    outputDialogOpen,
+    setOutputDialogOpen,
+  ] = useState(false)
+  const [
+    outputTableName,
+    setOutputTableName,
+  ] = useState('')
+  const [
+    outputDescription,
+    setOutputDescription,
+  ] = useState('')
+  const [
+    outputCreateState,
+    setOutputCreateState,
+  ] = useState('idle')
+  const [
+    outputCreateError,
+    setOutputCreateError,
+  ] = useState('')
+  const [
+    outputResult,
+    setOutputResult,
+  ] = useState(null)
+  const [
+    saveQueryState,
+    setSaveQueryState,
+  ] = useState('idle')
+  const [
+    saveQueryError,
+    setSaveQueryError,
+  ] = useState('')
+  const restoringSavedQueryRef =
+    useRef(false)
+
   const tableOptions = useMemo(
     () =>
       tables.map((table) => ({
@@ -1191,6 +1271,18 @@ function VisualSqlBuilder({
     Boolean(preflight?.can_execute) &&
     selectedColumnCount > 0
 
+  const savedQueryOptions =
+    useMemo(
+      () =>
+        savedQueries.map(
+          (item) => ({
+            value: item.id,
+            label: item.query_name,
+          }),
+        ),
+      [savedQueries],
+    )
+
 
   const preflightPayload = useMemo(
     () => ({
@@ -1258,6 +1350,21 @@ function VisualSqlBuilder({
     ],
   )
 
+  const currentQuerySignature =
+    useMemo(
+      () =>
+        JSON.stringify(
+          preflightPayload,
+        ),
+      [preflightPayload],
+    )
+
+  const savedQueryDirty =
+    Boolean(activeSavedQueryId) &&
+    Boolean(activeSavedQuerySnapshot) &&
+    currentQuerySignature !==
+      activeSavedQuerySnapshot
+
   const maskedColumnCount =
     useMemo(() => {
       let count = 0
@@ -1280,6 +1387,53 @@ function VisualSqlBuilder({
     ])
 
   useEffect(() => {
+    let cancelled = false
+
+    async function loadSavedQueryList() {
+      try {
+        setSavedQueriesState(
+          'loading',
+        )
+        setSavedQueryError('')
+
+        const response =
+          await listSavedQueries()
+
+        if (cancelled) {
+          return
+        }
+
+        setSavedQueries(
+          response.saved_queries ||
+            [],
+        )
+        setSavedQueriesState(
+          'complete',
+        )
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        setSavedQueries([])
+        setSavedQueriesState(
+          'error',
+        )
+        setSavedQueryError(
+          error.message ||
+            'Saved query belum dapat dibaca.',
+        )
+      }
+    }
+
+    loadSavedQueryList()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (
       baseTable ||
       tables.length === 0
@@ -1294,6 +1448,14 @@ function VisualSqlBuilder({
   ])
 
   useEffect(() => {
+    if (
+      restoringSavedQueryRef.current
+    ) {
+      restoringSavedQueryRef.current =
+        false
+      return
+    }
+
     setJoins([])
     setRelationshipToAdd('')
     setSelectedColumns(
@@ -1307,6 +1469,8 @@ function VisualSqlBuilder({
       direction: 'asc',
     })
     setPreviewPage(1)
+    setActiveSavedQueryId(null)
+    setActiveSavedQuerySnapshot('')
   }, [baseTable])
 
   useEffect(() => {
@@ -1368,31 +1532,55 @@ function VisualSqlBuilder({
   ])
 
   useEffect(() => {
-    const validKeys = new Set()
-
-    for (const tableName of queryPlan.tables) {
-      for (const column of (
-        tableDetails[tableName]
-          ?.columns || []
-      )) {
-        validKeys.add(
-          columnKey(
-            tableName,
-            column.column_name,
-          ),
-        )
-      }
-    }
+    const includedTables =
+      new Set(queryPlan.tables)
 
     setSelectedColumns(
       (current) => {
-        const next = new Set(
-          Array.from(
-            current,
-          ).filter((key) =>
-            validKeys.has(key),
-          ),
-        )
+        const next = new Set()
+
+        for (const key of current) {
+          const separator =
+            key.indexOf('::')
+          const tableName =
+            key.slice(
+              0,
+              separator,
+            )
+          const columnName =
+            key.slice(
+              separator + 2,
+            )
+
+          if (
+            !includedTables.has(
+              tableName,
+            )
+          ) {
+            continue
+          }
+
+          const detail =
+            tableDetails[tableName]
+
+          if (!detail) {
+            next.add(key)
+            continue
+          }
+
+          const exists =
+            (
+              detail.columns || []
+            ).some(
+              (column) =>
+                column.column_name ===
+                columnName,
+            )
+
+          if (exists) {
+            next.add(key)
+          }
+        }
 
         return next
       },
@@ -1419,27 +1607,106 @@ function VisualSqlBuilder({
       return
     }
 
-    const stillAvailable =
-      filterColumnOptions.some(
-        (option) =>
-          option.tableName ===
-            sortConfig.tableName &&
-          option.columnName ===
-            sortConfig.columnName,
+    if (
+      !includedTableSet.has(
+        sortConfig.tableName,
       )
-
-    if (!stillAvailable) {
+    ) {
       setSortConfig({
         tableName: '',
         columnName: '',
         dataType: '',
         direction: 'asc',
       })
+      return
+    }
+
+    const detail =
+      tableDetails[
+        sortConfig.tableName
+      ]
+
+    if (!detail) {
+      return
+    }
+
+    const column =
+      (
+        detail.columns || []
+      ).find(
+        (item) =>
+          item.column_name ===
+          sortConfig.columnName,
+      )
+
+    if (!column) {
+      setSortConfig({
+        tableName: '',
+        columnName: '',
+        dataType: '',
+        direction: 'asc',
+      })
+      return
+    }
+
+    if (
+      sortConfig.dataType !==
+      column.data_type
+    ) {
+      setSortConfig(
+        (current) => ({
+          ...current,
+          dataType:
+            column.data_type,
+        }),
+      )
     }
   }, [
-    filterColumnOptions,
+    includedTableSet,
     sortConfig,
+    tableDetails,
   ])
+
+  useEffect(() => {
+    setFilters((current) => {
+      let changed = false
+
+      const next = current.map(
+        (filter) => {
+          const column =
+            (
+              tableDetails[
+                filter.tableName
+              ]?.columns || []
+            ).find(
+              (item) =>
+                item.column_name ===
+                filter.columnName,
+            )
+
+          if (
+            !column ||
+            filter.dataType ===
+              column.data_type
+          ) {
+            return filter
+          }
+
+          changed = true
+
+          return {
+            ...filter,
+            dataType:
+              column.data_type,
+          }
+        },
+      )
+
+      return changed
+        ? next
+        : current
+    })
+  }, [tableDetails])
 
   useEffect(() => {
     if (!baseTable) {
@@ -1745,6 +2012,411 @@ function VisualSqlBuilder({
     })
   }
 
+  async function refreshSavedQueries(
+    nextSelectedId = null,
+  ) {
+    const response =
+      await listSavedQueries()
+
+    setSavedQueries(
+      response.saved_queries || [],
+    )
+    setSavedQueriesState(
+      'complete',
+    )
+
+    if (
+      nextSelectedId !== null
+    ) {
+      setSelectedSavedQueryId(
+        nextSelectedId,
+      )
+    }
+
+    return (
+      response.saved_queries || []
+    )
+  }
+
+  function applySavedQuery(
+    savedQuery,
+  ) {
+    const definition =
+      savedQuery.query_definition || {}
+
+    const nextBaseTable =
+      definition.base_table || ''
+
+    if (
+      nextBaseTable !==
+      baseTable
+    ) {
+      restoringSavedQueryRef.current =
+        true
+    }
+
+    setBaseTable(nextBaseTable)
+
+    setJoins(
+      (
+        definition.joins || []
+      ).map((join) => ({
+        relationshipId:
+          String(
+            join.relationship_id,
+          ),
+        joinType:
+          join.join_type,
+      })),
+    )
+
+    setRelationshipToAdd('')
+    setNextJoinType('LEFT JOIN')
+
+    setSelectedColumns(
+      new Set(
+        (
+          definition.selected_columns ||
+          []
+        ).map((column) =>
+          columnKey(
+            column.table_name,
+            column.column_name,
+          ),
+        ),
+      ),
+    )
+
+    setFilters(
+      (
+        definition.filters || []
+      ).map((filter) => ({
+        id:
+          nextFilterId.current++,
+        tableName:
+          filter.table_name,
+        columnName:
+          filter.column_name,
+        dataType: '',
+        operator:
+          filter.operator,
+        value:
+          filter.value ?? '',
+      })),
+    )
+
+    setSortConfig(
+      definition.sort_by
+        ? {
+            tableName:
+              definition.sort_by
+                .table_name,
+            columnName:
+              definition.sort_by
+                .column_name,
+            dataType: '',
+            direction:
+              definition.sort_by
+                .direction ||
+              'asc',
+          }
+        : {
+            tableName: '',
+            columnName: '',
+            dataType: '',
+            direction: 'asc',
+          },
+    )
+
+    setPreviewPage(1)
+    setPreview(null)
+    setPreviewState('idle')
+    setPreviewError('')
+    setUnmaskedColumns(
+      new Set(),
+    )
+
+    setActiveSavedQueryId(
+      savedQuery.id,
+    )
+    setSelectedSavedQueryId(
+      savedQuery.id,
+    )
+    setActiveSavedQuerySnapshot(
+      JSON.stringify(
+        definition,
+      ),
+    )
+    setSavedQueryError('')
+  }
+
+  async function loadSelectedSavedQuery() {
+    if (!selectedSavedQueryId) {
+      return
+    }
+
+    try {
+      setSavedQueriesState(
+        'loading-query',
+      )
+      setSavedQueryError('')
+
+      const response =
+        await getSavedQuery(
+          selectedSavedQueryId,
+        )
+
+      applySavedQuery(
+        response.saved_query,
+      )
+
+      setSavedQueriesState(
+        'complete',
+      )
+    } catch (error) {
+      setSavedQueriesState(
+        'error',
+      )
+      setSavedQueryError(
+        error.message ||
+          'Saved query belum dapat dibuka.',
+      )
+    }
+  }
+
+  function openSaveQueryDialog() {
+    if (!canPreview) {
+      return
+    }
+
+    const active =
+      savedQueries.find(
+        (item) =>
+          item.id ===
+          activeSavedQueryId,
+      )
+
+    setSaveQueryName(
+      active?.query_name || '',
+    )
+    setSaveQueryDescription(
+      active?.description || '',
+    )
+    setSaveQueryError('')
+    setSaveQueryState('idle')
+    setSaveDialogOpen(true)
+  }
+
+  function closeSaveQueryDialog() {
+    if (
+      saveQueryState ===
+      'saving'
+    ) {
+      return
+    }
+
+    setSaveDialogOpen(false)
+    setSaveQueryError('')
+  }
+
+  async function submitSavedQuery() {
+    const queryName =
+      saveQueryName.trim()
+
+    if (!queryName) {
+      setSaveQueryError(
+        'Nama saved query wajib diisi.',
+      )
+      return
+    }
+
+    if (!canPreview) {
+      setSaveQueryError(
+        'Query harus lolos preflight sebelum disimpan.',
+      )
+      return
+    }
+
+    try {
+      setSaveQueryState(
+        'saving',
+      )
+      setSaveQueryError('')
+
+      const payload = {
+        query_name: queryName,
+        description:
+          saveQueryDescription.trim() ||
+          null,
+        query: preflightPayload,
+      }
+
+      const response =
+        activeSavedQueryId
+          ? await updateSavedQuery(
+              activeSavedQueryId,
+              payload,
+            )
+          : await createSavedQuery(
+              payload,
+            )
+
+      const savedQuery =
+        response.saved_query
+
+      setActiveSavedQueryId(
+        savedQuery.id,
+      )
+      setActiveSavedQuerySnapshot(
+        JSON.stringify(
+          savedQuery.query_definition ||
+            preflightPayload,
+        ),
+      )
+
+      await refreshSavedQueries(
+        savedQuery.id,
+      )
+
+      setSaveQueryState(
+        'saved',
+      )
+
+      window.setTimeout(
+        () => {
+          setSaveDialogOpen(false)
+          setSaveQueryState(
+            'idle',
+          )
+        },
+        450,
+      )
+    } catch (error) {
+      setSaveQueryState(
+        'error',
+      )
+      setSaveQueryError(
+        error.message ||
+          'Query belum dapat disimpan.',
+      )
+    }
+  }
+
+  async function removeSelectedSavedQuery() {
+    if (!selectedSavedQueryId) {
+      return
+    }
+
+    const target =
+      savedQueries.find(
+        (item) =>
+          item.id ===
+          selectedSavedQueryId,
+      )
+
+    const confirmed =
+      window.confirm(
+        `Hapus saved query "${
+          target?.query_name ||
+          selectedSavedQueryId
+        }"?`,
+      )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setSavedQueriesState(
+        'deleting',
+      )
+      setSavedQueryError('')
+
+      await deleteSavedQuery(
+        selectedSavedQueryId,
+      )
+
+      if (
+        activeSavedQueryId ===
+        selectedSavedQueryId
+      ) {
+        setActiveSavedQueryId(
+          null,
+        )
+        setActiveSavedQuerySnapshot(
+          '',
+        )
+      }
+
+      setSelectedSavedQueryId(
+        null,
+      )
+
+      await refreshSavedQueries()
+    } catch (error) {
+      setSavedQueriesState(
+        'error',
+      )
+      setSavedQueryError(
+        error.message ||
+          'Saved query belum dapat dihapus.',
+      )
+    }
+  }
+
+  function openOutputDialog() {
+    if (!canPreview) return
+    setOutputTableName('')
+    setOutputDescription('')
+    setOutputCreateError('')
+    setOutputCreateState('idle')
+    setOutputDialogOpen(true)
+  }
+
+  function closeOutputDialog() {
+    if (outputCreateState === 'creating') return
+    setOutputDialogOpen(false)
+    setOutputCreateError('')
+  }
+
+  async function submitOutputTable() {
+    const tableName = outputTableName.trim()
+    if (!tableName) {
+      setOutputCreateError('Nama output table wajib diisi.')
+      return
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(tableName)) {
+      setOutputCreateError('Gunakan huruf, angka, dan underscore tanpa spasi.')
+      return
+    }
+    if (!canPreview) {
+      setOutputCreateError('Query harus lolos preflight sebelum membuat output table.')
+      return
+    }
+    try {
+      setOutputCreateState('creating')
+      setOutputCreateError('')
+      const response = await createOutputTable({
+        ...preflightPayload,
+        output_table_name: tableName,
+        description: outputDescription.trim() || null,
+        source_saved_query_id:
+          activeSavedQueryId && !savedQueryDirty
+            ? activeSavedQueryId
+            : null,
+      })
+      setOutputResult(response)
+      setOutputCreateState('created')
+      window.setTimeout(() => {
+        setOutputDialogOpen(false)
+        setOutputCreateState('idle')
+      }, 550)
+    } catch (error) {
+      setOutputCreateState('error')
+      setOutputCreateError(error.message || 'Output table belum dapat dibuat.')
+    }
+  }
+
   function addFilter() {
     const firstColumn =
       filterColumnOptions[0]
@@ -2001,6 +2673,9 @@ function VisualSqlBuilder({
     setUnmaskedColumns(
       new Set(),
     )
+    setActiveSavedQueryId(null)
+    setActiveSavedQuerySnapshot('')
+    setSelectedSavedQueryId(null)
   }
 
   async function copySql() {
@@ -2040,15 +2715,15 @@ function VisualSqlBuilder({
         </div>
 
         <div className="tp-sql-builder-stage">
-          Step 6E.4 · Sort & Pagination
+          Step 6E.5A · Save Query
         </div>
       </div>
 
       <div className="tp-sql-builder-grid">
         <div className="tp-sql-builder-workspace">
           <div className="tp-sql-source-row">
-            <section className="tp-sql-section tp-sql-base-section">
-              <div className="tp-sql-section-heading tp-sql-base-section-heading">
+            <section className="tp-sql-section">
+              <div className="tp-sql-section-heading">
                 <div className="tp-sql-step-number">
                   1
                 </div>
@@ -2062,18 +2737,10 @@ function VisualSqlBuilder({
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  className="tp-sql-reset-button tp-sql-reset-button-top"
-                  onClick={resetBuilder}
-                >
-                  <RotateCcw size={13} />
-                  Reset Query
-                </button>
               </div>
 
-            <div className="tp-sql-base-relation-controls">
-              <div className="tp-sql-source-control">
+            <div>
+              <div>
                 <label>
                   Base Table
                 </label>
@@ -2098,7 +2765,7 @@ function VisualSqlBuilder({
                 />
               </div>
 
-              <div className="tp-sql-source-control">
+              <div>
                 <label>
                   Relationship
                 </label>
@@ -2167,16 +2834,29 @@ function VisualSqlBuilder({
                   />
                 </div>
 
-                <Button
-                  type="button"
-                  onClick={addJoin}
-                  disabled={
-                    !relationshipToAdd
-                  }
-                >
-                  <Plus size={13} />
-                  Add Join
-                </Button>
+                <div className="tp-sql-join-actions">
+                  <button
+                    type="button"
+                    className="tp-sql-add-join-button"
+                    onClick={addJoin}
+                    disabled={
+                      !relationshipToAdd
+                    }
+                  >
+                    <Plus size={12} />
+                    Add Join
+                  </button>
+
+                  <button
+                    type="button"
+                    className="tp-sql-reset-button"
+                    onClick={resetBuilder}
+                    aria-label="Reset query"
+                    title="Reset query"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </div>
               </div>
 
             </div>
@@ -2210,7 +2890,7 @@ function VisualSqlBuilder({
 
             <div className="tp-sql-path">
               {baseTable && (
-                <div className="tp-sql-path-table is-base tp-sql-path-base-node">
+                <div className="tp-sql-path-table is-base">
                   <Database size={13} />
 
                   <div>
@@ -2262,14 +2942,14 @@ function VisualSqlBuilder({
                             />
 
                             <div>
-                              <div className="tp-sql-table-title-line tp-sql-relation-title">
+                              <div>
                                 <strong>
                                   {
                                     step.newTable
                                   }
                                 </strong>
 
-                                <span className="tp-sql-cardinality-inline">
+                                <span>
                                   {cardinalityLabel(
                                     step.relationship
                                       .cardinality,
@@ -2520,7 +3200,7 @@ function VisualSqlBuilder({
           </section>
 
           <div className="tp-sql-refine-row">
-            <section className="tp-sql-section tp-sql-filter-section">
+            <section className="tp-sql-section">
               <div className="tp-sql-section-heading tp-sql-filter-heading">
                 <div className="tp-sql-step-number">
                   4
@@ -3090,6 +3770,188 @@ function VisualSqlBuilder({
             SQL dibentuk hanya dari tabel, relationship, join type, output column, filter, dan sort yang dipilih melalui UI. Nilai filter dikirim ke backend sebagai parameter, bukan digabungkan menjadi raw SQL.
           </div>
 
+          <div className="tp-sql-saved-query-card">
+            <div className="tp-sql-saved-query-heading">
+              <div>
+                <Save size={13} />
+
+                <div>
+                  <strong>
+                    Query
+                  </strong>
+
+                  <span>
+                    Simpan konfigurasi query atau materialisasikan hasilnya menjadi tabel baru.
+                  </span>
+                </div>
+              </div>
+
+              {activeSavedQueryId && (
+                <span
+                  className={`tp-sql-saved-query-status ${
+                    savedQueryDirty
+                      ? 'is-dirty'
+                      : 'is-saved'
+                  }`}
+                >
+                  {savedQueryDirty
+                    ? 'Unsaved changes'
+                    : 'Saved'}
+                </span>
+              )}
+            </div>
+
+            <CaffeineDropdown
+              options={
+                savedQueryOptions
+              }
+              value={
+                savedQueryOptions.find(
+                  (option) =>
+                    option.value ===
+                    selectedSavedQueryId,
+                ) || null
+              }
+              onChange={(option) =>
+                setSelectedSavedQueryId(
+                  option?.value ||
+                    null,
+                )
+              }
+              searchable
+              clearable
+              disabled={
+                savedQueriesState ===
+                  'loading' ||
+                savedQueries.length ===
+                  0
+              }
+              placeholder={
+                savedQueriesState ===
+                'loading'
+                  ? 'Loading saved query...'
+                  : savedQueries.length ===
+                      0
+                    ? 'Belum ada saved query'
+                    : 'Pilih saved query'
+              }
+              className="tp-vibe-dropdown"
+            />
+
+            <div className="tp-sql-query-action-row">
+              <button
+                type="button"
+                className="tp-sql-query-secondary-button"
+                onClick={
+                  loadSelectedSavedQuery
+                }
+                disabled={
+                  !selectedSavedQueryId ||
+                  savedQueriesState ===
+                    'loading-query'
+                }
+              >
+                <FolderOpen
+                  size={12}
+                />
+                {savedQueriesState ===
+                'loading-query'
+                  ? 'Loading...'
+                  : 'Load'}
+              </button>
+
+              <button
+                type="button"
+                className="tp-sql-query-delete-button"
+                onClick={
+                  removeSelectedSavedQuery
+                }
+                disabled={
+                  !selectedSavedQueryId ||
+                  savedQueriesState ===
+                    'deleting'
+                }
+                aria-label="Hapus saved query"
+                title="Hapus saved query"
+              >
+                <Trash2 size={12} />
+              </button>
+
+              <div className="tp-sql-query-action-spacer" />
+
+              <button
+                type="button"
+                className="tp-sql-query-save-button"
+                onClick={
+                  openSaveQueryDialog
+                }
+                disabled={!canPreview}
+              >
+                <Save size={12} />
+                {activeSavedQueryId
+                  ? 'Save Changes'
+                  : 'Save Query'}
+              </button>
+
+              <button
+                type="button"
+                className="tp-sql-query-create-button"
+                onClick={
+                  openOutputDialog
+                }
+                disabled={
+                  !canPreview ||
+                  outputCreateState ===
+                    'creating'
+                }
+              >
+                <Table2 size={12} />
+                Create Table
+              </button>
+            </div>
+
+            {outputResult && (
+              <div className="tp-sql-output-table-result">
+                <Database size={12} />
+
+                <div>
+                  <strong>
+                    {
+                      outputResult.output_table
+                    }
+                  </strong>
+
+                  <span>
+                    {
+                      outputResult.column_count
+                    } columns
+                    {outputResult.row_count !==
+                    null &&
+                    outputResult.row_count !==
+                    undefined
+                      ? ` · ${outputResult.row_count} rows`
+                      : ''}
+                    {
+                      outputResult.masked_output_columns
+                        ?.length
+                        ? ` · ${outputResult.masked_output_columns.length} masked`
+                        : ''
+                    }
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {savedQueryError && (
+              <div className="tp-sql-saved-query-error">
+                <AlertCircle
+                  size={11}
+                />
+                {savedQueryError}
+              </div>
+            )}
+          </div>
+
           <div
             className={`tp-sql-next-stage ${
               canPreview
@@ -3143,8 +4005,250 @@ function VisualSqlBuilder({
                   : 'Lengkapi Query'}
             </button>
           </div>
+
         </aside>
       </div>
+
+      {saveDialogOpen && (
+        <div
+          className="tp-sql-save-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              closeSaveQueryDialog()
+            }
+          }}
+        >
+          <div
+            className="tp-sql-save-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tp-sql-save-dialog-title"
+          >
+            <div className="tp-sql-save-dialog-heading">
+              <div>
+                <Save size={15} />
+
+                <div>
+                  <h3
+                    id="tp-sql-save-dialog-title"
+                  >
+                    {activeSavedQueryId
+                      ? 'Save Changes'
+                      : 'Save Query'}
+                  </h3>
+
+                  <p>
+                    Menyimpan struktur query, bukan hasil datanya.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  closeSaveQueryDialog
+                }
+                aria-label="Tutup"
+                title="Tutup"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="tp-sql-save-dialog-body">
+              <label>
+                Query Name
+                <input
+                  value={
+                    saveQueryName
+                  }
+                  onChange={(event) =>
+                    setSaveQueryName(
+                      event.target
+                        .value,
+                    )
+                  }
+                  maxLength={120}
+                  autoFocus
+                  placeholder="Contoh: Debitur dan fasilitas aktif"
+                />
+              </label>
+
+              <label>
+                Description
+                <textarea
+                  value={
+                    saveQueryDescription
+                  }
+                  onChange={(event) =>
+                    setSaveQueryDescription(
+                      event.target
+                        .value,
+                    )
+                  }
+                  maxLength={500}
+                  rows={3}
+                  placeholder="Opsional"
+                />
+              </label>
+
+              <div className="tp-sql-save-dialog-summary">
+                <span>
+                  {
+                    queryPlan.tables
+                      .length
+                  } tables
+                </span>
+                <span>
+                  {
+                    queryPlan.steps
+                      .length
+                  } joins
+                </span>
+                <span>
+                  {
+                    selectedColumnCount
+                  } outputs
+                </span>
+                <span>
+                  {
+                    filters.length
+                  } filters
+                </span>
+              </div>
+
+              {saveQueryError && (
+                <div className="tp-sql-save-dialog-error">
+                  <AlertCircle
+                    size={12}
+                  />
+                  {saveQueryError}
+                </div>
+              )}
+            </div>
+
+            <div className="tp-sql-save-dialog-actions">
+              <button
+                type="button"
+                onClick={
+                  closeSaveQueryDialog
+                }
+                disabled={
+                  saveQueryState ===
+                    'saving'
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="is-primary"
+                onClick={
+                  submitSavedQuery
+                }
+                disabled={
+                  saveQueryState ===
+                    'saving' ||
+                  !saveQueryName.trim()
+                }
+              >
+                <Save size={12} />
+                {saveQueryState ===
+                'saving'
+                  ? 'Saving...'
+                  : activeSavedQueryId
+                    ? 'Save Changes'
+                    : 'Save Query'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {outputDialogOpen && (
+        <div
+          className="tp-sql-save-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeOutputDialog()
+          }}
+        >
+          <div
+            className="tp-sql-save-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tp-sql-output-dialog-title"
+          >
+            <div className="tp-sql-save-dialog-heading">
+              <div>
+                <Table2 size={15} />
+                <div>
+                  <h3 id="tp-sql-output-dialog-title">Create Output Table</h3>
+                  <p>Membuat tabel fisik baru dari query yang telah lolos preflight.</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeOutputDialog} aria-label="Tutup" title="Tutup">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="tp-sql-save-dialog-body">
+              <label>
+                Output Table Name
+                <input
+                  value={outputTableName}
+                  onChange={(event) => setOutputTableName(event.target.value)}
+                  maxLength={63}
+                  autoFocus
+                  placeholder="Contoh: kredit_debitur_final"
+                />
+              </label>
+              <label>
+                Description
+                <textarea
+                  value={outputDescription}
+                  onChange={(event) => setOutputDescription(event.target.value)}
+                  maxLength={500}
+                  rows={3}
+                  placeholder="Opsional"
+                />
+              </label>
+              <div className="tp-sql-save-dialog-summary">
+                <span>{queryPlan.tables.length} tables</span>
+                <span>{queryPlan.steps.length} joins</span>
+                <span>{selectedColumnCount} outputs</span>
+                <span>{maskedColumnCount} masked</span>
+              </div>
+              <div className="tp-sql-output-dialog-note">
+                <ShieldCheck size={12} />
+                <span>Preview tetap read-only. Aksi ini membuat tabel baru; nama tabel yang sudah ada tidak akan ditimpa. Metadata masking pada source column diteruskan ke output table.</span>
+              </div>
+              {outputCreateError && (
+                <div className="tp-sql-save-dialog-error">
+                  <AlertCircle size={12} />
+                  {outputCreateError}
+                </div>
+              )}
+            </div>
+
+            <div className="tp-sql-save-dialog-actions">
+              <button type="button" onClick={closeOutputDialog} disabled={outputCreateState === 'creating'}>Cancel</button>
+              <button
+                type="button"
+                className="is-primary"
+                onClick={submitOutputTable}
+                disabled={outputCreateState === 'creating' || !outputTableName.trim()}
+              >
+                <Table2 size={12} />
+                {outputCreateState === 'creating' ? 'Creating...' : 'Create Table'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {previewState !== 'idle' && (
         <section

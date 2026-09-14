@@ -340,7 +340,7 @@ function DashboardLayout({ children, activeItem }) {
         </div>
       </aside>
 
-      <div className="vibe-shell-main vibe-shell-main-branded">
+      <div className="vibe-shell-main">
         <header className="vibe-shell-topbar">
           <div className="vibe-shell-frozen-page">
             <button

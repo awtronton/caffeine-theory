@@ -15,14 +15,12 @@ import {
   PencilLine,
   RefreshCw,
   Search,
-  Table2,
   Trash2,
   TriangleAlert,
   X,
 } from 'lucide-react'
 
 import DashboardLayout from '../layouts/DashboardLayout'
-import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import {
   deleteWarehouseTable,
   getTableDetail,
@@ -361,13 +359,6 @@ function DataTables() {
   return (
     <DashboardLayout>
       <main className="tp-data-tables mx-auto w-full max-w-[1480px] space-y-5">
-        <WorkspacePageHeader
-          eyebrow="Data Warehouse"
-          title="Data Tables"
-          description="Review seluruh tabel yang tersimpan di warehouse dan periksa konsistensi nama kolom pada tabel yang dipilih."
-          icon={Table2}
-          badge="Table Catalog"
-        />
 
         {message && (
           <div className="tp-data-message">

@@ -22,7 +22,6 @@ import {
 
 import CaffeineDropdown from '../components/ui/CaffeineDropdown'
 import DashboardLayout from '../layouts/DashboardLayout'
-import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import {
   exploreTable,
   getBanks,
@@ -393,13 +392,6 @@ function TableExplorer() {
   return (
     <DashboardLayout>
       <main className="tp-table-explorer mx-auto w-full max-w-[1480px] space-y-5">
-        <WorkspacePageHeader
-          eyebrow="Data Warehouse"
-          title="Table Explorer"
-          description="Browse isi tabel warehouse, filter berdasarkan bank dan periode, lakukan pencarian, sorting, serta inspeksi detail row."
-          icon={Database}
-          badge="Data Browser"
-        />
 
         {error && (
           <div className="tp-explorer-error">

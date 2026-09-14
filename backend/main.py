@@ -11,7 +11,9 @@ from database.table_service import (
     count_period_rows,
     create_new_table,
     create_table_relationship,
+    create_saved_query,
     drop_warehouse_table,
+    delete_saved_query,
     delete_table_relationship,
     get_all_tables,
     get_all_table_summaries,
@@ -20,9 +22,12 @@ from database.table_service import (
     get_table_explorer_options,
     get_table_relationships,
     get_table_summary,
+    get_saved_query,
+    list_saved_queries,
     explore_table_data,
     rename_table_column,
     set_column_masking,
+    update_saved_query,
     update_table_relationship,
     replace_period_data,
     require_schema_mapping,
@@ -59,13 +64,14 @@ from services.query_preflight_service import (
     run_query_preflight,
 )
 from services.query_execution_service import (
+    execute_query_materialization,
     execute_query_preview,
 )
 
 
 app = FastAPI(
     title="OJK Data Warehouse API",
-    version="1.9.0",
+    version="1.11.0",
 )
 
 
@@ -183,6 +189,67 @@ class QueryPreviewRequest(QueryPreflightRequest):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=100, ge=1, le=200)
     unmask_columns: list[QueryPreflightColumnRequest] = Field(default_factory=list)
+
+
+class SavedQueryRequest(BaseModel):
+    query_name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    query: QueryPreflightRequest
+
+
+class QueryMaterializeRequest(QueryPreflightRequest):
+    output_table_name: str = Field(min_length=1, max_length=63)
+    description: str | None = Field(default=None, max_length=500)
+    source_saved_query_id: int | None = None
+
+
+def validate_saved_query_definition(
+    query: QueryPreflightRequest,
+):
+    definition = query.model_dump()
+
+    result = run_query_preflight(
+        base_table=query.base_table,
+        joins=[
+            item.model_dump()
+            for item in query.joins
+        ],
+        selected_columns=[
+            item.model_dump()
+            for item in query.selected_columns
+        ],
+        filters=[
+            item.model_dump()
+            for item in query.filters
+        ],
+        sort_by=(
+            query.sort_by.model_dump()
+            if query.sort_by
+            else None
+        ),
+    )
+
+    if not result.get("can_execute"):
+        blocking = next(
+            (
+                issue
+                for issue in result.get("issues", [])
+                if issue.get("severity") == "error"
+            ),
+            None,
+        )
+
+        message = (
+            blocking.get("message")
+            if blocking
+            else "Query belum valid dan belum dapat disimpan."
+        )
+
+        raise ValueError(
+            f"Query belum dapat disimpan. {message}"
+        )
+
+    return definition, result
 
 
 def dataframe_to_records(df):
@@ -828,6 +895,147 @@ def relationship_scoring_job(job_id: int):
 
 
 # =====================================================
+# SAVED QUERIES
+# =====================================================
+
+@app.get("/saved-queries")
+def saved_queries():
+    try:
+        rows = list_saved_queries()
+
+        return {
+            "status": "success",
+            "count": len(rows),
+            "saved_queries": rows,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR GET /saved-queries:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.get("/saved-queries/{query_id}")
+def saved_query_detail(query_id: int):
+    try:
+        return {
+            "status": "success",
+            "saved_query": get_saved_query(
+                query_id
+            ),
+        }
+
+    except Exception as error:
+        print(
+            "ERROR GET /saved-queries/{query_id}:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.post("/saved-queries")
+def save_query(payload: SavedQueryRequest):
+    try:
+        definition, preflight = (
+            validate_saved_query_definition(
+                payload.query
+            )
+        )
+
+        saved_query = create_saved_query(
+            query_name=payload.query_name,
+            description=payload.description,
+            query_definition=definition,
+        )
+
+        return {
+            "status": "success",
+            "saved_query": saved_query,
+            "preflight": preflight,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR POST /saved-queries:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.patch("/saved-queries/{query_id}")
+def save_query_changes(
+    query_id: int,
+    payload: SavedQueryRequest,
+):
+    try:
+        definition, preflight = (
+            validate_saved_query_definition(
+                payload.query
+            )
+        )
+
+        saved_query = update_saved_query(
+            query_id,
+            query_name=payload.query_name,
+            description=payload.description,
+            query_definition=definition,
+        )
+
+        return {
+            "status": "success",
+            "saved_query": saved_query,
+            "preflight": preflight,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR PATCH /saved-queries/{query_id}:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.delete("/saved-queries/{query_id}")
+def remove_saved_query(query_id: int):
+    try:
+        deleted = delete_saved_query(
+            query_id
+        )
+
+        return {
+            "status": "success",
+            "message": (
+                f"Saved query '{deleted['query_name']}' berhasil dihapus."
+            ),
+            "deleted": deleted,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR DELETE /saved-queries/{query_id}:",
+            repr(error),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+# =====================================================
 # QUERY PREFLIGHT
 # =====================================================
 
@@ -912,6 +1120,33 @@ def query_preview(payload: QueryPreviewRequest):
             status_code=400,
             detail=str(error),
         )
+
+
+# =====================================================
+# QUERY MATERIALIZATION
+# =====================================================
+
+@app.post("/query/materialize")
+def materialize_query(payload: QueryMaterializeRequest):
+    try:
+        result = execute_query_materialization(
+            output_table_name=payload.output_table_name,
+            description=payload.description,
+            base_table=payload.base_table,
+            joins=[item.model_dump() for item in payload.joins],
+            selected_columns=[item.model_dump() for item in payload.selected_columns],
+            filters=[item.model_dump() for item in payload.filters],
+            sort_by=(payload.sort_by.model_dump() if payload.sort_by else None),
+            source_saved_query_id=payload.source_saved_query_id,
+        )
+        return {
+            "status": "success",
+            "message": f"Output table '{result['output_table']}' berhasil dibuat.",
+            **result,
+        }
+    except Exception as error:
+        print("ERROR POST /query/materialize:", repr(error))
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 # =====================================================

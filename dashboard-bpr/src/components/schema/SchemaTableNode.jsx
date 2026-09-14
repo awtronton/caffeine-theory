@@ -37,7 +37,7 @@ function SchemaTableNode({
         </span>
       </div>
 
-      <div className="tp-flow-table-node-columns">
+      <div>
         {columns.map((column) => (
           <div
             key={column.column_name}

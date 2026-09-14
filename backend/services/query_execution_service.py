@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from database.connection import engine
 from database.table_service import (
     MASK_VALUE,
+    ensure_internal_tables,
     get_masked_columns,
+    get_saved_query,
     get_table_column_details,
     get_table_relationships,
+    register_materialized_output_metadata,
     validate_column_name,
     validate_table_name,
 )
@@ -45,6 +49,14 @@ def _relationship_pairs(relationship: dict):
 
 def _column_key(table_name: str, column_name: str) -> str:
     return f"{table_name}::{column_name}"
+
+
+def _output_alias(table_name: str, column_name: str) -> str:
+    raw = f"{table_name}__{column_name}"
+    if len(raw) <= 63:
+        return raw
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+    return f"{raw[:54]}_{digest}"
 
 
 def _data_type_family(data_type: str | None):
@@ -246,6 +258,7 @@ def _build_query_sql(
     selected_columns: list[dict],
     filters: list[dict],
     sort_by: dict | None,
+    paginate: bool = True,
 ):
     base_table = validate_table_name(base_table)
 
@@ -292,6 +305,7 @@ def _build_query_sql(
         )
 
     output_columns = []
+    used_aliases = set()
 
     for selected in selected_columns:
         table_name = validate_table_name(selected["table_name"])
@@ -302,7 +316,10 @@ def _build_query_sql(
                 f"Kolom '{table_name}.{column_name}' tidak termasuk dalam query."
             )
 
-        alias = f"{table_name}__{column_name}"
+        alias = _output_alias(table_name, column_name)
+        if alias in used_aliases:
+            raise ValueError("Nama output column bentrok setelah normalisasi identifier.")
+        used_aliases.add(alias)
 
         output_columns.append(
             {
@@ -310,6 +327,7 @@ def _build_query_sql(
                 "table_name": table_name,
                 "column_name": column_name,
                 "sql_alias": alias,
+                "output_column": alias,
             }
         )
 
@@ -455,8 +473,9 @@ def _build_query_sql(
             f"{sort_direction.upper()} NULLS LAST"
         )
 
-    lines.append("LIMIT :preview_limit")
-    lines.append("OFFSET :preview_offset")
+    if paginate:
+        lines.append("LIMIT :preview_limit")
+        lines.append("OFFSET :preview_offset")
 
     return "\n".join(lines), output_columns, filter_params
 
@@ -507,6 +526,7 @@ def execute_query_preview(
         selected_columns=selected_columns,
         filters=filters,
         sort_by=sort_by,
+        paginate=True,
     )
 
     selected_keys = {
@@ -635,5 +655,95 @@ def execute_query_preview(
         "sort_by": sort_by,
         "elapsed_ms": elapsed_ms,
         "read_only": True,
+        "preflight": preflight,
+    }
+
+
+def execute_query_materialization(
+    *,
+    output_table_name: str,
+    description: str | None,
+    base_table: str,
+    joins: list[dict] | None = None,
+    selected_columns: list[dict] | None = None,
+    filters: list[dict] | None = None,
+    sort_by: dict | None = None,
+    source_saved_query_id: int | None = None,
+):
+    joins = list(joins or [])
+    selected_columns = list(selected_columns or [])
+    filters = list(filters or [])
+    sort_by = dict(sort_by or {}) if sort_by else None
+    output_table_name = validate_table_name(output_table_name)
+    ensure_internal_tables()
+    if inspect(engine).has_table(output_table_name):
+        raise ValueError(f"Tabel '{output_table_name}' sudah tersedia. Gunakan nama output table yang berbeda.")
+
+    preflight = run_query_preflight(
+        base_table=base_table, joins=joins, selected_columns=selected_columns, filters=filters, sort_by=sort_by
+    )
+    if not preflight["can_execute"]:
+        raise ValueError("Query belum valid. Perbaiki query berdasarkan hasil preflight sebelum membuat output table.")
+
+    query_definition = {
+        "base_table": base_table,
+        "joins": joins,
+        "selected_columns": selected_columns,
+        "filters": filters,
+        "sort_by": sort_by,
+    }
+    if source_saved_query_id is not None:
+        saved_query = get_saved_query(int(source_saved_query_id))
+        if saved_query.get("query_definition") != query_definition:
+            raise ValueError("Query saat ini berbeda dari Saved Query yang dipilih. Simpan perubahan terlebih dahulu atau buat output table tanpa referensi Saved Query.")
+
+    sql, output_columns, filter_params = _build_query_sql(
+        base_table=base_table, joins=joins, selected_columns=selected_columns, filters=filters, sort_by=sort_by, paginate=False
+    )
+    masked_by_table = {name: get_masked_columns(name) for name in preflight["tables"]}
+    materialized_columns = []
+    masked_output_columns = []
+    for item in output_columns:
+        masked = item["column_name"] in masked_by_table.get(item["table_name"], set())
+        materialized_columns.append({
+            "table_name": item["table_name"],
+            "column_name": item["column_name"],
+            "output_column": item["output_column"],
+            "masked": masked,
+        })
+        if masked:
+            masked_output_columns.append(item["output_column"])
+
+    create_sql = f"CREATE TABLE {_quote_identifier(output_table_name)} AS\n{sql}"
+    started = time.perf_counter()
+    with engine.begin() as connection:
+        connection.execute(text("SET LOCAL statement_timeout = '120000ms'"))
+        connection.execute(text("SET LOCAL lock_timeout = '5000ms'"))
+        result = connection.execute(text(create_sql), filter_params)
+        row_count = int(result.rowcount) if result.rowcount is not None and result.rowcount >= 0 else None
+        lineage = register_materialized_output_metadata(
+            connection=connection,
+            output_table=output_table_name,
+            description=description,
+            base_table=base_table,
+            source_tables=preflight["tables"],
+            query_definition=query_definition,
+            output_columns=materialized_columns,
+            masked_output_columns=masked_output_columns,
+            source_saved_query_id=source_saved_query_id,
+            row_count=row_count,
+        )
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    return {
+        "output_table": output_table_name,
+        "description": str(description).strip() if description else None,
+        "row_count": lineage["row_count"],
+        "column_count": len(materialized_columns),
+        "source_tables": preflight["tables"],
+        "output_columns": materialized_columns,
+        "masked_output_columns": masked_output_columns,
+        "source_saved_query_id": source_saved_query_id,
+        "lineage_id": lineage["lineage_id"],
+        "elapsed_ms": elapsed_ms,
         "preflight": preflight,
     }

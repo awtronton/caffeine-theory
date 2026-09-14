@@ -49,7 +49,7 @@
   height: 2px;
   border-radius: 999px 999px 0 0;
   background: transparent;
-  content: '';
+  content: "";
 }
 
 .tp-schema-tab:hover {
@@ -573,17 +573,7 @@
   font-weight: 500;
 }
 
-.tp-relationship-form-grid {
-  display: grid;
-  grid-template-columns:
-    minmax(150px, 1fr)
-    minmax(150px, 1fr)
-    36px
-    minmax(150px, 1fr)
-    minmax(150px, 1fr);
-  gap: 9px;
-  align-items: end;
-}
+
 
 .tp-relationship-field label {
   display: block;
@@ -593,12 +583,7 @@
   font-weight: 500;
 }
 
-.tp-relationship-connector {
-  display: grid;
-  height: 40px;
-  place-items: center;
-  color: #8a8d98;
-}
+
 
 .tp-relationship-meta-grid {
   display: grid;
@@ -629,72 +614,23 @@
     0 0 0 2px rgba(0, 115, 234, 0.08);
 }
 
-.tp-relationship-compatibility {
-  display: grid;
-  grid-template-columns:
-    1fr auto 1fr;
-  gap: 10px;
-  align-items: center;
-  margin-top: 14px;
-  border: 1px solid #dfe1e6;
-  border-radius: 8px;
-  background: #fafbfc;
-  padding: 10px;
-}
 
-.tp-relationship-compatibility > div {
-  min-width: 0;
-}
 
-.tp-relationship-compatibility strong {
-  display: block;
-  color: #4d5059;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  font-size: var(--tp-font-size-min);
-  font-weight: 500;
-}
 
-.tp-relationship-compatibility span {
-  display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  color: #838691;
-  font-size: var(--tp-font-size-min);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.tp-relationship-compatibility small {
-  grid-column: 1 / -1;
-  color: #7c7f8a;
-  font-size: var(--tp-font-size-min);
-  font-weight: 400;
-}
 
-.tp-relationship-compatibility.is-compatible {
-  border-color: #cae8dd;
-  background: #f5fbf8;
-}
 
-.tp-relationship-compatibility.is-compatible
-  > svg {
-  color: #03906a;
-}
 
-.tp-relationship-compatibility.is-warning {
-  border-color: #edd9b3;
-  background: #fffaf0;
-}
 
-.tp-relationship-compatibility.is-warning
-  > svg {
-  color: #a66b19;
-}
+
+
+
+
+
+
+
+
+
 
 .tp-relationship-builder-footer {
   display: flex;
@@ -967,13 +903,9 @@
     border-bottom: 1px solid #eceef2;
   }
 
-  .tp-relationship-form-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  
 
-  .tp-relationship-connector {
-    display: none;
-  }
+  
 }
 
 @media (max-width: 720px) {
@@ -982,8 +914,7 @@
     flex-direction: column;
   }
 
-  .tp-relationship-form-grid,
-  .tp-relationship-meta-grid {
+  .tp-relationship-meta-grid{
     grid-template-columns: 1fr;
   }
 
@@ -1178,6 +1109,7 @@
 }
 
 .tp-flow-canvas {
+  position: relative;
   height: 505px;
   min-height: 505px;
 }
@@ -1421,7 +1353,8 @@
 }
 
 .tp-cardinality-helper-visual {
-  margin: 7px 0 4px;
+  width: min(64%, 430px);
+  margin: 8px auto 7px;
   overflow: hidden;
   border-radius: 7px;
   background: #fff;
@@ -1465,19 +1398,20 @@
 }
 
 .tp-cardinality-helper p {
-  margin: 5px 0 0;
-  color: #666975;
+  margin: 7px 0 0;
+  color: #565963;
   font-size: var(--tp-font-size-min);
   font-weight: 400;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .tp-cardinality-example {
   display: block;
-  margin-top: 3px;
-  color: #8e919b;
+  margin-top: 5px;
+  color: #777a85;
   font-size: var(--tp-font-size-min);
   font-weight: 400;
+  line-height: 1.45;
 }
 
 @media (max-width: 920px) {
@@ -1514,9 +1448,6 @@
  * These rules only refine the project-specific visual layer.
  */
 
-.tp-flow-canvas {
-  position: relative;
-}
 
 .tp-flow-empty-cue {
   position: absolute;
@@ -1549,38 +1480,12 @@
   line-height: 1.45;
 }
 
-/* Cardinality illustration dibuat lebih kecil. */
-.tp-cardinality-helper-visual {
-  width: min(64%, 430px);
-  margin: 8px auto 7px;
-}
 
-/* Penjelasan dibuat lebih dominan daripada gambar. */
-.tp-cardinality-helper p {
-  margin: 7px 0 0;
-  color: #565963;
-  font-size: var(--tp-font-size-min);
-  font-weight: 400;
-  line-height: 1.5;
-}
 
-.tp-cardinality-example {
-  display: block;
-  margin-top: 5px;
-  color: #777a85;
-  font-size: var(--tp-font-size-min);
-  font-weight: 400;
-  line-height: 1.45;
-}
 
-.tp-cardinality-helper-heading span {
-  font-size: var(--tp-font-size-min);
-  font-weight: 500;
-}
 
-.tp-cardinality-helper-heading small {
-  font-size: var(--tp-font-size-min);
-}
+
+
 
 @media (max-width: 760px) {
   .tp-cardinality-helper-visual {
@@ -1705,16 +1610,8 @@
   line-height: 1.4;
 }
 
-.tp-sql-base-row {
-  display: grid;
-  grid-template-columns:
-    minmax(240px, 430px)
-    auto;
-  gap: 9px;
-  align-items: center;
-}
 
-.tp-sql-reset-button,
+
 .tp-sql-copy-button,
 .tp-sql-remove-join {
   display: inline-flex;
@@ -1731,12 +1628,7 @@
   cursor: pointer;
 }
 
-.tp-sql-reset-button {
-  height: 38px;
-  padding: 0 9px;
-}
 
-.tp-sql-reset-button:hover,
 .tp-sql-copy-button:hover:not(:disabled) {
   background: #f5f6f8;
   color: #323338;
@@ -1857,33 +1749,11 @@
   background: #fff1f3;
 }
 
-.tp-sql-join-condition {
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  border-top: 1px solid #f0f1f3;
-  background: #fafbfc;
-  padding: 6px 8px;
-  color: #81848e;
-}
 
-.tp-sql-join-condition svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
 
-.tp-sql-join-condition span {
-  overflow: hidden;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  font-size: var(--tp-font-size-min);
-  line-height: 1.4;
-  text-overflow: ellipsis;
-}
+
+
+
 
 .tp-sql-join-type-row {
   display: grid;
@@ -1909,19 +1779,10 @@
   min-width: 0;
 }
 
-.tp-sql-join-type-row .tp-vibe-dropdown *,
-.tp-sql-add-type .tp-vibe-dropdown * {
-  font-size: 11px !important;
-  line-height: 1.25 !important;
-}
 
-.tp-sql-add-type {
-  min-width: 240px;
-}
 
-.tp-sql-add-type .tp-vibe-dropdown {
-  width: 100%;
-}
+
+
 
 /* Keep the relationship cardinality label separated from the control row. */
 .tp-sql-join-card-main .tp-sql-path-table span {
@@ -1929,27 +1790,9 @@
   line-height: 1.2;
 }
 
-.tp-sql-add-join {
-  display: grid;
-  grid-template-columns:
-    minmax(260px, 1fr)
-    240px
-    auto;
-  gap: 9px;
-  align-items: end;
-  border: 1px dashed #d8dbe2;
-  border-radius: 8px;
-  background: #fafbfc;
-  padding: 10px;
-}
 
-.tp-sql-add-join label {
-  display: block;
-  margin-bottom: 5px;
-  color: #757883;
-  font-size: var(--tp-font-size-min);
-  font-weight: 500;
-}
+
+
 
 .tp-sql-inline-warning {
   display: flex;
@@ -2306,10 +2149,7 @@
     flex-direction: column;
   }
 
-  .tp-sql-base-row,
-  .tp-sql-add-join {
-    grid-template-columns: 1fr;
-  }
+  
 
   .tp-sql-column-groups {
     grid-template-columns: 1fr;
@@ -3256,16 +3096,9 @@
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
-  .tp-sql-add-join {
-    grid-template-columns:
-      minmax(240px, 1fr)
-      220px
-      auto;
-  }
+  
 
-  .tp-sql-add-type {
-    min-width: 220px;
-  }
+  
 }
 
 
@@ -3275,138 +3108,37 @@
    is fully controlled and is not clipped by the join path.
    ========================================================= */
 
-.tp-compact-join-select {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-}
 
-.tp-compact-join-trigger {
-  display: flex;
-  width: 100%;
-  height: 40px;
-  min-height: 40px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid #c8ccd6;
-  border-radius: 6px;
-  background: #ffffff;
-  padding: 0 9px 0 10px;
-  color: #323338;
-  font-family: var(--tp-font-ui);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    background 120ms ease;
-}
 
-.tp-compact-join-trigger:hover:not(:disabled) {
-  border-color: #9ea3ad;
-}
 
-.tp-compact-join-select.is-open
-  .tp-compact-join-trigger {
-  border-color: #0073ea;
-  box-shadow: 0 0 0 1px #0073ea;
-}
 
-.tp-compact-join-trigger:disabled {
-  background: #f1f2f5;
-  color: #a0a3ad;
-  cursor: not-allowed;
-}
 
-.tp-compact-join-trigger span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.tp-compact-join-trigger svg {
-  flex: 0 0 auto;
-  transition: transform 120ms ease;
-}
 
-.tp-compact-join-select.is-open
-  .tp-compact-join-trigger svg {
-  transform: rotate(180deg);
-}
 
-.tp-compact-join-menu {
-  max-height: 220px;
-  overflow-y: auto;
-  border: 1px solid #d8dbe2;
-  border-radius: 7px;
-  background: #ffffff;
-  padding: 4px;
-  box-shadow:
-    0 10px 28px rgba(15, 23, 42, 0.13),
-    0 2px 8px rgba(15, 23, 42, 0.06);
-}
 
-.tp-compact-join-option {
-  display: flex;
-  width: 100%;
-  min-height: 27px;
-  align-items: center;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  padding: 5px 8px;
-  color: #323338;
-  font-family: var(--tp-font-ui);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
 
-.tp-compact-join-option:hover {
-  background: #f1f3f6;
-}
 
-.tp-compact-join-option.is-selected {
-  background: #e7f3ff;
-  color: #0060b9;
-  font-weight: 650;
-}
 
-.tp-compact-join-option + .tp-compact-join-option {
-  margin-top: 1px;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* Join type control widths */
-.tp-sql-join-type-row {
-  grid-template-columns:
-    210px
-    minmax(0, 1fr);
-}
 
-.tp-sql-add-type {
-  min-width: 240px;
-}
 
-@media (max-width: 820px) {
-  .tp-compact-join-trigger {
-    height: 40px;
-    min-height: 40px;
-    font-size: 10px;
-  }
 
-  .tp-compact-join-option {
-    min-height: 26px;
-    font-size: 10px;
-  }
-}
+
 
 
 /* =========================================================
@@ -3997,16 +3729,8 @@
 }
 
 /* Keep the Base Table compact inside the narrower left pane. */
-.tp-sql-source-row
-  .tp-sql-base-row {
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
 
-.tp-sql-source-row
-  .tp-sql-reset-button {
-  width: 100%;
-}
+
 
 /* Join Path gets the larger pane and remains horizontally scrollable. */
 .tp-sql-source-row
@@ -4016,19 +3740,9 @@
 }
 
 /* Compact the add-join controls so they fit comfortably in the right pane. */
-.tp-sql-source-row
-  .tp-sql-add-join {
-  grid-template-columns:
-    minmax(175px, 1fr)
-    165px
-    auto;
-  gap: 7px;
-}
 
-.tp-sql-source-row
-  .tp-sql-add-type {
-  min-width: 0;
-}
+
+
 
 .tp-sql-source-row
   .tp-sql-section-heading {
@@ -4047,66 +3761,43 @@
     border-top: 1px solid #e7e9ed;
   }
 
-  .tp-sql-source-row
-    .tp-sql-base-row {
-    grid-template-columns:
-      minmax(240px, 430px)
-      auto;
-  }
-
-  .tp-sql-source-row
-    .tp-sql-reset-button {
-    width: auto;
-  }
-
-  .tp-sql-source-row
-    .tp-sql-add-join {
-    grid-template-columns:
-      minmax(260px, 1fr)
-      240px
-      auto;
-    gap: 9px;
-  }
+  
 }
 
 @media (max-width: 760px) {
-  .tp-sql-source-row
-    .tp-sql-base-row,
-  .tp-sql-source-row
-    .tp-sql-add-join {
-    grid-template-columns: 1fr;
-  }
-
-  .tp-sql-source-row
-    .tp-sql-reset-button {
-    width: 100%;
-  }
 }
 
 
 /* =========================================================
-   Reset Query — link style
+   Base / Relation query controls
    ========================================================= */
 
+.tp-sql-base-heading-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Reset Query is intentionally icon-only. */
 .tp-sql-reset-button {
-  width: fit-content !important;
-  min-height: 28px;
-  justify-content: flex-start;
-  gap: 6px;
-  border: 0 !important;
-  border-radius: 0;
-  background: transparent !important;
-  padding: 2px 0;
-  color: #0073ea !important;
-  font-size: 11px;
-  font-weight: 600;
-  box-shadow: none !important;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 1px solid #cfd5df;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0;
+  color: #0073ea;
+  box-shadow: none;
+  cursor: pointer;
 }
 
 .tp-sql-reset-button:hover:not(:disabled) {
-  background: transparent !important;
-  color: #0060b9 !important;
-  text-decoration: underline;
+  border-color: #9ebfe5;
+  background: #f7fbff;
+  color: #0060b9;
 }
 
 .tp-sql-reset-button:focus-visible {
@@ -4116,13 +3807,63 @@
 
 .tp-sql-reset-button svg {
   color: currentColor;
-  flex: 0 0 auto;
 }
 
-.tp-sql-reset-button:disabled {
-  color: #a9adb8 !important;
+/* Keep Add Join visually secondary and compact below Join Type. */
+.tp-sql-source-join-row {
+  min-width: 0;
+}
+
+.tp-sql-source-control {
+  min-width: 0;
+}
+
+.tp-sql-join-actions {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tp-sql-add-join-button {
+  display: inline-flex;
+  width: fit-content;
+  height: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 0;
+  border: 1px solid #cfd5df;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0 10px;
+  color: #0060b9;
+  font-family: var(--tp-font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tp-sql-add-join-button:hover:not(:disabled) {
+  border-color: #9ebfe5;
+  background: #f7fbff;
+  color: #0056a6;
+}
+
+.tp-sql-add-join-button:focus-visible {
+  outline: 2px solid rgba(0, 115, 234, 0.28);
+  outline-offset: 2px;
+}
+
+.tp-sql-add-join-button:disabled {
+  border-color: #e1e3e8;
+  background: #f1f2f5;
+  color: #a5a8b1;
   cursor: not-allowed;
-  text-decoration: none;
 }
 
 
@@ -4140,11 +3881,6 @@
   flex: 0 0 auto;
 }
 
-/* Foundation/status pills have intentionally been removed from the submenu. */
-.vibe-shell-topbar-center
-  .tp-schema-tab > span {
-  display: none;
-}
 
 @media (max-width: 1180px) {
   .vibe-shell-topbar-center
@@ -4167,24 +3903,361 @@
    Keep trigger value and opened menu options at the same size.
    ========================================================= */
 
-.tp-compact-join-trigger,
-.tp-compact-join-trigger span,
-.tp-compact-join-menu,
-.tp-compact-join-option {
-  font-size: 10px !important;
-  line-height: 1.25 !important;
+
+/* =========================================================
+   Step 6E.5A — Saved Query
+   ========================================================= */
+
+.tp-sql-saved-query-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
 }
 
-.tp-compact-join-trigger,
-.tp-compact-join-trigger span {
-  font-weight: 500 !important;
+.tp-sql-saved-query-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.tp-compact-join-option {
-  font-weight: 500 !important;
+.tp-sql-saved-query-heading > div {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
 }
 
-.tp-compact-join-option.is-selected {
-  font-size: 10px !important;
-  font-weight: 600 !important;
+.tp-sql-saved-query-heading svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #1768a9;
 }
+
+.tp-sql-saved-query-heading strong {
+  display: block;
+  color: #323338;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.tp-sql-saved-query-heading span {
+  display: block;
+  margin-top: 2px;
+  color: #8a8d98;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.tp-sql-saved-query-status {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 8px !important;
+  font-weight: 650;
+  line-height: 1.1 !important;
+}
+
+.tp-sql-saved-query-status.is-saved {
+  background: #eaf8f0;
+  color: #087f5b;
+}
+
+.tp-sql-saved-query-status.is-dirty {
+  background: #fff4df;
+  color: #996515;
+}
+
+.tp-sql-query-action-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #eceef2;
+  padding-top: 8px;
+}
+
+.tp-sql-query-action-row button,
+.tp-sql-save-dialog-actions button {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #cfd5df;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0 9px;
+  color: #676879;
+  font-family: var(--tp-font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tp-sql-query-action-row button:hover:not(:disabled),
+.tp-sql-save-dialog-actions button:hover:not(:disabled) {
+  border-color: #9ebfe5;
+  background: #f7fbff;
+  color: #0060b9;
+}
+
+.tp-sql-query-action-row button:disabled,
+.tp-sql-save-dialog-actions button:disabled {
+  border-color: #e2e4e9;
+  background: #f2f3f5;
+  color: #a7a9b1;
+  cursor: not-allowed;
+}
+
+.tp-sql-query-delete-button {
+  width: 29px;
+  padding: 0 !important;
+  color: #c13b4a !important;
+}
+
+.tp-sql-query-delete-button:hover:not(:disabled) {
+  border-color: #efb5bc !important;
+  background: #fff4f5 !important;
+  color: #b42334 !important;
+}
+
+.tp-sql-query-action-spacer {
+  flex: 1 1 auto;
+  min-width: 12px;
+}
+
+.tp-sql-query-save-button {
+  border-color: #b7d5f4 !important;
+  background: #ffffff !important;
+  color: #0073ea !important;
+}
+
+.tp-sql-query-save-button:hover:not(:disabled) {
+  border-color: #0073ea !important;
+  background: #f4f9ff !important;
+  color: #0060b9 !important;
+}
+
+.tp-sql-query-create-button {
+  border-color: #00a96e !important;
+  background: #00a96e !important;
+  color: #ffffff !important;
+}
+
+.tp-sql-query-create-button:hover:not(:disabled) {
+  border-color: #008f5d !important;
+  background: #008f5d !important;
+  color: #ffffff !important;
+}
+
+.tp-sql-query-create-button:disabled {
+  border-color: #dfe2e8 !important;
+  background: #f1f2f5 !important;
+  color: #a5a8b1 !important;
+}
+
+.tp-sql-saved-query-error,
+.tp-sql-save-dialog-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 5px;
+  background: #fff1f2;
+  padding: 7px 8px;
+  color: #b42334;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.tp-sql-saved-query-error svg,
+.tp-sql-save-dialog-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.tp-sql-save-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  background: rgba(30, 33, 40, 0.28);
+  padding: 20px;
+  backdrop-filter: blur(1px);
+}
+
+.tp-sql-save-dialog {
+  width: min(460px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid #d9dde5;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow:
+    0 20px 50px rgba(15, 23, 42, 0.18),
+    0 3px 12px rgba(15, 23, 42, 0.08);
+}
+
+.tp-sql-save-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #eceef2;
+  padding: 13px 14px;
+}
+
+.tp-sql-save-dialog-heading > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tp-sql-save-dialog-heading > div > svg {
+  margin-top: 2px;
+  color: #1768a9;
+}
+
+.tp-sql-save-dialog-heading h3 {
+  margin: 0;
+  color: #323338;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.tp-sql-save-dialog-heading p {
+  margin: 3px 0 0;
+  color: #8a8d98;
+  font-size: 9px;
+}
+
+.tp-sql-save-dialog-heading > button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #676879;
+  cursor: pointer;
+}
+
+.tp-sql-save-dialog-heading > button:hover {
+  background: #f1f2f4;
+  color: #323338;
+}
+
+.tp-sql-save-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 14px;
+}
+
+.tp-sql-save-dialog-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #676879;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.tp-sql-save-dialog-body input,
+.tp-sql-save-dialog-body textarea {
+  width: 100%;
+  border: 1px solid #cfd4de;
+  border-radius: 6px;
+  outline: 0;
+  background: #ffffff;
+  padding: 8px 9px;
+  color: #323338;
+  font-family: var(--tp-font-ui);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.tp-sql-save-dialog-body input {
+  height: 38px;
+}
+
+.tp-sql-save-dialog-body textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.tp-sql-save-dialog-body input:focus,
+.tp-sql-save-dialog-body textarea:focus {
+  border-color: #0073ea;
+  box-shadow: 0 0 0 1px #0073ea;
+}
+
+.tp-sql-save-dialog-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tp-sql-save-dialog-summary span {
+  border-radius: 999px;
+  background: #f1f3f6;
+  padding: 3px 7px;
+  color: #676879;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.tp-sql-save-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  border-top: 1px solid #eceef2;
+  background: #fafbfc;
+  padding: 10px 14px;
+}
+
+.tp-sql-save-dialog-actions button.is-primary {
+  margin-left: 0;
+  border-color: #0073ea;
+  background: #0073ea;
+  color: #ffffff;
+}
+
+.tp-sql-save-dialog-actions button.is-primary:hover:not(:disabled) {
+  border-color: #0060b9;
+  background: #0060b9;
+  color: #ffffff;
+}
+
+@media (max-width: 820px) {
+  .tp-sql-query-action-row {
+    flex-wrap: wrap;
+  }
+
+  .tp-sql-query-action-spacer {
+    display: none;
+  }
+
+  .tp-sql-query-save-button,
+  .tp-sql-query-create-button {
+    flex: 1 1 auto;
+  }
+}
+
+/* =========================================================
+   Step 6E.5B — Create Output Table
+   ========================================================= */
+.tp-sql-output-table-result { display:flex; align-items:flex-start; gap:7px; border-radius:6px; background:#f6f8fa; padding:8px; }
+.tp-sql-output-table-result > svg { flex:0 0 auto; margin-top:1px; color:#1768a9; }
+.tp-sql-output-table-result strong { display:block; color:#323338; font-size:9px; font-weight:650; }
+.tp-sql-output-table-result span { display:block; margin-top:2px; color:#8a8d98; font-size:8px; line-height:1.3; }
+.tp-sql-output-dialog-note { display:flex; align-items:flex-start; gap:7px; border:1px solid #dce9f8; border-radius:6px; background:#f6faff; padding:8px; color:#526273; font-size:9px; line-height:1.4; }
+.tp-sql-output-dialog-note svg { flex:0 0 auto; margin-top:1px; color:#1768a9; }

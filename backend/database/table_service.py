@@ -39,10 +39,8 @@ RELATIONSHIP_CANDIDATES_TABLE_NAME = "warehouse_relationship_candidates"
 RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME = "warehouse_relationship_candidate_jobs"
 RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME = "warehouse_relationship_candidate_scores"
 RELATIONSHIP_SCORING_JOBS_TABLE_NAME = "warehouse_relationship_scoring_jobs"
-RELATIONSHIP_REVIEWS_TABLE_NAME = "warehouse_relationship_reviews"
-RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME = "warehouse_relationship_review_candidates"
-RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME = "warehouse_relationship_cardinality_estimates"
-RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME = "warehouse_relationship_cardinality_jobs"
+SAVED_QUERIES_TABLE_NAME = "warehouse_saved_queries"
+OUTPUT_LINEAGE_TABLE_NAME = "warehouse_output_lineage"
 MASK_VALUE = "••••••••"
 PROFILE_JOB_STATUSES = {
     "queued",
@@ -83,10 +81,8 @@ INTERNAL_TABLES = {
     RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME,
     RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME,
     RELATIONSHIP_SCORING_JOBS_TABLE_NAME,
-    RELATIONSHIP_REVIEWS_TABLE_NAME,
-    RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME,
-    RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME,
-    RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME,
+    SAVED_QUERIES_TABLE_NAME,
+    OUTPUT_LINEAGE_TABLE_NAME,
 }
 
 
@@ -484,6 +480,52 @@ def _backfill_relationship_columns():
             )
 
 
+saved_queries_table = Table(
+    SAVED_QUERIES_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("query_name", String(120), nullable=False),
+    Column("description", String(500), nullable=True),
+    Column("base_table", String(63), nullable=False),
+    Column("query_definition", JSON, nullable=False),
+    Column(
+        "created_at",
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    ),
+    Column(
+        "updated_at",
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    ),
+    UniqueConstraint(
+        "query_name",
+        name="uq_saved_queries_query_name",
+    ),
+)
+
+output_lineage_table = Table(
+    OUTPUT_LINEAGE_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("output_table", String(63), nullable=False),
+    Column("description", String(500), nullable=True),
+    Column("base_table", String(63), nullable=False),
+    Column("source_tables", JSON, nullable=False),
+    Column("query_definition", JSON, nullable=False),
+    Column("output_columns", JSON, nullable=False),
+    Column("masked_output_columns", JSON, nullable=False),
+    Column("source_saved_query_id", Integer, nullable=True),
+    Column("row_count", BigInteger, nullable=True),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    UniqueConstraint("output_table", name="uq_output_lineage_output_table"),
+)
+
+
+
 def ensure_internal_tables():
     metadata.create_all(
         engine,
@@ -499,9 +541,352 @@ def ensure_internal_tables():
             relationship_candidate_jobs_table,
             relationship_candidate_scores_table,
             relationship_scoring_jobs_table,
+            saved_queries_table,
+            output_lineage_table,
         ],
     )
     _backfill_relationship_columns()
+
+
+# =====================================================
+# SAVED QUERY METADATA
+# =====================================================
+
+def _normalize_saved_query_name(value: str):
+    name = str(value or "").strip()
+
+    if not name:
+        raise ValueError("Nama saved query wajib diisi.")
+
+    if len(name) > 120:
+        raise ValueError("Nama saved query maksimal 120 karakter.")
+
+    return name
+
+
+def _normalize_saved_query_description(value):
+    if value is None:
+        return None
+
+    description = str(value).strip()
+
+    if not description:
+        return None
+
+    if len(description) > 500:
+        raise ValueError("Deskripsi saved query maksimal 500 karakter.")
+
+    return description
+
+
+def _serialize_saved_query(row):
+    if row is None:
+        return None
+
+    definition = dict(row["query_definition"] or {})
+
+    return {
+        "id": int(row["id"]),
+        "query_name": row["query_name"],
+        "description": row["description"],
+        "base_table": row["base_table"],
+        "query_definition": definition,
+        "summary": {
+            "join_count": len(definition.get("joins") or []),
+            "output_count": len(
+                definition.get("selected_columns") or []
+            ),
+            "filter_count": len(definition.get("filters") or []),
+            "has_sort": bool(definition.get("sort_by")),
+        },
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_saved_queries():
+    ensure_internal_tables()
+
+    statement = (
+        select(saved_queries_table)
+        .order_by(
+            saved_queries_table.c.updated_at.desc(),
+            saved_queries_table.c.id.desc(),
+        )
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            statement
+        ).mappings().all()
+
+    return [
+        _serialize_saved_query(row)
+        for row in rows
+    ]
+
+
+def get_saved_query(query_id: int):
+    ensure_internal_tables()
+
+    query_id = int(query_id)
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one_or_none()
+
+    if row is None:
+        raise ValueError(
+            f"Saved query dengan ID {query_id} tidak ditemukan."
+        )
+
+    return _serialize_saved_query(row)
+
+
+def create_saved_query(
+    *,
+    query_name: str,
+    description=None,
+    query_definition: dict,
+):
+    ensure_internal_tables()
+
+    name = _normalize_saved_query_name(query_name)
+    description = _normalize_saved_query_description(
+        description
+    )
+    definition = dict(query_definition or {})
+    base_table = str(
+        definition.get("base_table") or ""
+    ).strip()
+
+    if not base_table:
+        raise ValueError(
+            "Saved query harus memiliki base table."
+        )
+
+    with engine.begin() as connection:
+        duplicate = connection.execute(
+            select(saved_queries_table.c.id).where(
+                func.lower(
+                    saved_queries_table.c.query_name
+                )
+                == name.lower()
+            )
+        ).scalar_one_or_none()
+
+        if duplicate is not None:
+            raise ValueError(
+                f"Nama saved query '{name}' sudah digunakan."
+            )
+
+        result = connection.execute(
+            saved_queries_table.insert().values(
+                query_name=name,
+                description=description,
+                base_table=base_table,
+                query_definition=definition,
+            )
+        )
+
+        query_id = int(
+            result.inserted_primary_key[0]
+        )
+
+        row = connection.execute(
+            select(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one()
+
+    return _serialize_saved_query(row)
+
+
+def update_saved_query(
+    query_id: int,
+    *,
+    query_name: str,
+    description=None,
+    query_definition: dict,
+):
+    ensure_internal_tables()
+
+    query_id = int(query_id)
+    name = _normalize_saved_query_name(query_name)
+    description = _normalize_saved_query_description(
+        description
+    )
+    definition = dict(query_definition or {})
+    base_table = str(
+        definition.get("base_table") or ""
+    ).strip()
+
+    if not base_table:
+        raise ValueError(
+            "Saved query harus memiliki base table."
+        )
+
+    with engine.begin() as connection:
+        current = connection.execute(
+            select(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one_or_none()
+
+        if current is None:
+            raise ValueError(
+                f"Saved query dengan ID {query_id} tidak ditemukan."
+            )
+
+        duplicate = connection.execute(
+            select(saved_queries_table.c.id).where(
+                func.lower(
+                    saved_queries_table.c.query_name
+                )
+                == name.lower(),
+                saved_queries_table.c.id != query_id,
+            )
+        ).scalar_one_or_none()
+
+        if duplicate is not None:
+            raise ValueError(
+                f"Nama saved query '{name}' sudah digunakan."
+            )
+
+        connection.execute(
+            saved_queries_table.update()
+            .where(
+                saved_queries_table.c.id == query_id
+            )
+            .values(
+                query_name=name,
+                description=description,
+                base_table=base_table,
+                query_definition=definition,
+                updated_at=func.now(),
+            )
+        )
+
+        row = connection.execute(
+            select(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one()
+
+    return _serialize_saved_query(row)
+
+
+def delete_saved_query(query_id: int):
+    ensure_internal_tables()
+
+    query_id = int(query_id)
+
+    with engine.begin() as connection:
+        current = connection.execute(
+            select(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one_or_none()
+
+        if current is None:
+            raise ValueError(
+                f"Saved query dengan ID {query_id} tidak ditemukan."
+            )
+
+        connection.execute(
+            delete(saved_queries_table).where(
+                saved_queries_table.c.id == query_id
+            )
+        )
+
+    return {
+        "id": query_id,
+        "query_name": current["query_name"],
+    }
+
+
+# =====================================================
+# MATERIALIZED OUTPUT METADATA / LINEAGE
+# =====================================================
+
+def register_materialized_output_metadata(
+    *,
+    connection,
+    output_table: str,
+    description,
+    base_table: str,
+    source_tables: list[str],
+    query_definition: dict,
+    output_columns: list[dict],
+    masked_output_columns: list[str],
+    source_saved_query_id: int | None = None,
+    row_count: int | None = None,
+):
+    output_table = validate_table_name(output_table)
+    base_table = validate_table_name(base_table)
+    normalized_sources = [validate_table_name(v) for v in source_tables]
+    schema_rows = []
+    for ordinal, item in enumerate(output_columns, start=1):
+        source_table = validate_table_name(item["table_name"])
+        source_column = validate_column_name(item["column_name"])
+        output_column = validate_column_name(item["output_column"])
+        schema_rows.append({
+            "table_name": output_table,
+            "source_ordinal": ordinal,
+            "source_column": f"{source_table}.{source_column}",
+            "database_column": output_column,
+        })
+    if schema_rows:
+        connection.execute(schema_mapping_table.insert(), schema_rows)
+    masked_set = {validate_column_name(v) for v in (masked_output_columns or [])}
+    if masked_set:
+        connection.execute(column_settings_table.insert(), [
+            {"table_name": output_table, "column_name": name, "is_masked": True}
+            for name in sorted(masked_set)
+        ])
+    connection.execute(table_state_table.insert().values(table_name=output_table, data_version=1))
+    result = connection.execute(output_lineage_table.insert().values(
+        output_table=output_table,
+        description=(str(description).strip() if description else None),
+        base_table=base_table,
+        source_tables=normalized_sources,
+        query_definition=dict(query_definition or {}),
+        output_columns=output_columns,
+        masked_output_columns=sorted(masked_set),
+        source_saved_query_id=(int(source_saved_query_id) if source_saved_query_id is not None else None),
+        row_count=(int(row_count) if row_count is not None else None),
+    ))
+    return {
+        "lineage_id": int(result.inserted_primary_key[0]),
+        "output_table": output_table,
+        "source_tables": normalized_sources,
+        "masked_output_columns": sorted(masked_set),
+        "row_count": (int(row_count) if row_count is not None else None),
+    }
+
+def get_output_lineage(table_name: str):
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+    with engine.connect() as connection:
+        row = connection.execute(select(output_lineage_table).where(output_lineage_table.c.output_table == table_name)).mappings().one_or_none()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "output_table": row["output_table"],
+        "description": row["description"],
+        "base_table": row["base_table"],
+        "source_tables": row["source_tables"] or [],
+        "query_definition": row["query_definition"] or {},
+        "output_columns": row["output_columns"] or [],
+        "masked_output_columns": row["masked_output_columns"] or [],
+        "source_saved_query_id": row["source_saved_query_id"],
+        "row_count": int(row["row_count"]) if row["row_count"] is not None else None,
+        "created_at": row["created_at"],
+    }
 
 
 # =====================================================
@@ -1905,6 +2290,256 @@ def get_table_columns(table_name: str):
     ]
 
 
+def drop_warehouse_table(table_name: str):
+    """Drop one warehouse table and clean metadata that depends on it.
+
+    This intentionally preserves historical profiling/discovery job records,
+    but removes active metadata that would otherwise point to a table that no
+    longer exists.
+    """
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+
+    inspector = inspect(engine)
+
+    if not inspector.has_table(table_name):
+        raise ValueError(
+            f"Tabel '{table_name}' tidak ditemukan."
+        )
+
+    with engine.begin() as connection:
+        relationship_ids = [
+            int(value)
+            for value in connection.execute(
+                select(
+                    relationships_table.c.id
+                ).where(
+                    or_(
+                        relationships_table.c.source_table
+                        == table_name,
+                        relationships_table.c.target_table
+                        == table_name,
+                    )
+                )
+            ).scalars().all()
+        ]
+
+        candidate_ids = [
+            int(value)
+            for value in connection.execute(
+                select(
+                    relationship_candidates_table.c.id
+                ).where(
+                    or_(
+                        relationship_candidates_table.c.source_table
+                        == table_name,
+                        relationship_candidates_table.c.target_table
+                        == table_name,
+                    )
+                )
+            ).scalars().all()
+        ]
+
+        saved_query_ids = []
+
+        for row in connection.execute(
+            select(
+                saved_queries_table.c.id,
+                saved_queries_table.c.base_table,
+                saved_queries_table.c.query_definition,
+            )
+        ).mappings():
+            definition = dict(
+                row["query_definition"] or {}
+            )
+
+            references_table = (
+                row["base_table"] == table_name
+                or definition.get("base_table")
+                == table_name
+            )
+
+            if (
+                not references_table
+                and relationship_ids
+            ):
+                referenced_relationship_ids = {
+                    int(join["relationship_id"])
+                    for join in (
+                        definition.get("joins")
+                        or []
+                    )
+                    if join.get(
+                        "relationship_id"
+                    )
+                    is not None
+                }
+
+                references_table = bool(
+                    referenced_relationship_ids
+                    & set(relationship_ids)
+                )
+
+            if references_table:
+                saved_query_ids.append(
+                    int(row["id"])
+                )
+
+        deleted_relationship_columns = 0
+        deleted_relationships = 0
+        deleted_candidate_scores = 0
+        deleted_candidates = 0
+        deleted_saved_queries = 0
+
+        if relationship_ids:
+            result = connection.execute(
+                delete(
+                    relationship_columns_table
+                ).where(
+                    relationship_columns_table.c.relationship_id.in_(
+                        relationship_ids
+                    )
+                )
+            )
+            deleted_relationship_columns = int(
+                result.rowcount or 0
+            )
+
+            result = connection.execute(
+                delete(
+                    relationships_table
+                ).where(
+                    relationships_table.c.id.in_(
+                        relationship_ids
+                    )
+                )
+            )
+            deleted_relationships = int(
+                result.rowcount or 0
+            )
+
+        if candidate_ids:
+            result = connection.execute(
+                delete(
+                    relationship_candidate_scores_table
+                ).where(
+                    relationship_candidate_scores_table.c.candidate_id.in_(
+                        candidate_ids
+                    )
+                )
+            )
+            deleted_candidate_scores = int(
+                result.rowcount or 0
+            )
+
+            result = connection.execute(
+                delete(
+                    relationship_candidates_table
+                ).where(
+                    relationship_candidates_table.c.id.in_(
+                        candidate_ids
+                    )
+                )
+            )
+            deleted_candidates = int(
+                result.rowcount or 0
+            )
+
+        if saved_query_ids:
+            result = connection.execute(
+                delete(
+                    saved_queries_table
+                ).where(
+                    saved_queries_table.c.id.in_(
+                        saved_query_ids
+                    )
+                )
+            )
+            deleted_saved_queries = int(
+                result.rowcount or 0
+            )
+
+        metadata_results = {
+            "output_lineage": connection.execute(
+                delete(output_lineage_table).where(output_lineage_table.c.output_table == table_name)
+            ).rowcount,
+            "schema_mapping": connection.execute(
+                delete(
+                    schema_mapping_table
+                ).where(
+                    schema_mapping_table.c.table_name
+                    == table_name
+                )
+            ).rowcount,
+            "column_settings": connection.execute(
+                delete(
+                    column_settings_table
+                ).where(
+                    column_settings_table.c.table_name
+                    == table_name
+                )
+            ).rowcount,
+            "column_profiles": connection.execute(
+                delete(
+                    column_profiles_table
+                ).where(
+                    column_profiles_table.c.table_name
+                    == table_name
+                )
+            ).rowcount,
+            "profile_jobs": connection.execute(
+                delete(
+                    profile_jobs_table
+                ).where(
+                    profile_jobs_table.c.table_name
+                    == table_name
+                )
+            ).rowcount,
+            "table_state": connection.execute(
+                delete(
+                    table_state_table
+                ).where(
+                    table_state_table.c.table_name
+                    == table_name
+                )
+            ).rowcount,
+        }
+
+        quoted_table = (
+            '"'
+            + table_name.replace(
+                '"',
+                '""',
+            )
+            + '"'
+        )
+
+        connection.execute(
+            text(
+                f"DROP TABLE {quoted_table}"
+            )
+        )
+
+    return {
+        "table_name": table_name,
+        "deleted_relationships":
+            deleted_relationships,
+        "deleted_relationship_columns":
+            deleted_relationship_columns,
+        "deleted_candidates":
+            deleted_candidates,
+        "deleted_candidate_scores":
+            deleted_candidate_scores,
+        "deleted_saved_queries":
+            deleted_saved_queries,
+        "deleted_metadata_rows": {
+            key: int(value or 0)
+            for key, value
+            in metadata_results.items()
+        },
+    }
+
+
 def get_all_tables():
     ensure_internal_tables()
 
@@ -2525,254 +3160,6 @@ def get_all_table_summaries():
         get_table_summary(table_name)
         for table_name in get_all_tables()
     ]
-
-
-def drop_warehouse_table(table_name: str):
-    """Drop satu tabel warehouse beserta metadata yang bergantung padanya.
-
-    Job history relationship intelligence tetap dipertahankan sebagai audit
-    history. Metadata yang mereferensikan tabel/relationship/candidate secara
-    langsung dibersihkan dalam transaksi yang sama dengan DROP TABLE.
-    """
-    table_name = validate_table_name(table_name)
-    ensure_internal_tables()
-
-    if not table_exists(table_name):
-        raise ValueError(
-            f"Tabel '{table_name}' tidak ditemukan."
-        )
-
-    summary = get_table_summary(table_name)
-    preparer = engine.dialect.identifier_preparer
-    quoted_table = preparer.quote(table_name)
-
-    removed = {
-        "relationships": 0,
-        "relationship_columns": 0,
-        "relationship_candidates": 0,
-        "relationship_candidate_scores": 0,
-        "relationship_cardinality_estimates": 0,
-        "relationship_reviews": 0,
-        "relationship_review_candidates": 0,
-        "column_profiles": 0,
-        "profile_jobs": 0,
-        "column_settings": 0,
-        "schema_mapping": 0,
-        "table_state": 0,
-    }
-
-    with engine.begin() as connection:
-        if engine.dialect.name == "postgresql":
-            connection.execute(
-                text(
-                    "SELECT pg_advisory_xact_lock("
-                    "hashtext(:lock_key))"
-                ),
-                {"lock_key": f"drop_table:{table_name}"},
-            )
-
-        inspector = inspect(connection)
-        if not inspector.has_table(table_name):
-            raise ValueError(
-                f"Tabel '{table_name}' tidak ditemukan."
-            )
-
-        active_profile_job = connection.execute(
-            select(profile_jobs_table.c.id)
-            .where(
-                profile_jobs_table.c.table_name == table_name,
-                profile_jobs_table.c.status.in_(["queued", "running"]),
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-
-        if active_profile_job is not None:
-            raise ValueError(
-                f"Tabel '{table_name}' sedang memiliki profiling job aktif. "
-                "Tunggu job selesai sebelum menghapus tabel."
-            )
-
-        relationship_ids = list(
-            connection.execute(
-                select(relationships_table.c.id).where(
-                    or_(
-                        relationships_table.c.source_table == table_name,
-                        relationships_table.c.target_table == table_name,
-                    )
-                )
-            ).scalars().all()
-        )
-
-        candidate_ids = list(
-            connection.execute(
-                select(relationship_candidates_table.c.id).where(
-                    or_(
-                        relationship_candidates_table.c.source_table == table_name,
-                        relationship_candidates_table.c.target_table == table_name,
-                    )
-                )
-            ).scalars().all()
-        )
-
-        optional_metadata = MetaData()
-
-        def reflect_optional(name: str):
-            if not inspector.has_table(name):
-                return None
-            return Table(
-                name,
-                optional_metadata,
-                autoload_with=connection,
-            )
-
-        review_candidates = reflect_optional(
-            RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME
-        )
-        reviews = reflect_optional(
-            RELATIONSHIP_REVIEWS_TABLE_NAME
-        )
-        cardinality_estimates = reflect_optional(
-            RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME
-        )
-
-        review_ids = set()
-
-        if review_candidates is not None and candidate_ids:
-            review_ids.update(
-                connection.execute(
-                    select(review_candidates.c.review_id).where(
-                        review_candidates.c.candidate_id.in_(candidate_ids)
-                    )
-                ).scalars().all()
-            )
-
-        if reviews is not None and relationship_ids:
-            review_ids.update(
-                connection.execute(
-                    select(reviews.c.id).where(
-                        or_(
-                            reviews.c.promoted_relationship_id.in_(relationship_ids),
-                            reviews.c.subject_relationship_id.in_(relationship_ids),
-                        )
-                    )
-                ).scalars().all()
-            )
-
-        if review_candidates is not None:
-            review_filters = []
-            if candidate_ids:
-                review_filters.append(
-                    review_candidates.c.candidate_id.in_(candidate_ids)
-                )
-            if review_ids:
-                review_filters.append(
-                    review_candidates.c.review_id.in_(list(review_ids))
-                )
-
-            if review_filters:
-                result = connection.execute(
-                    review_candidates.delete().where(
-                        or_(*review_filters)
-                    )
-                )
-                removed["relationship_review_candidates"] = int(
-                    result.rowcount or 0
-                )
-
-        if reviews is not None and review_ids:
-            result = connection.execute(
-                reviews.delete().where(
-                    reviews.c.id.in_(list(review_ids))
-                )
-            )
-            removed["relationship_reviews"] = int(
-                result.rowcount or 0
-            )
-
-        if cardinality_estimates is not None and candidate_ids:
-            result = connection.execute(
-                cardinality_estimates.delete().where(
-                    cardinality_estimates.c.candidate_id.in_(candidate_ids)
-                )
-            )
-            removed["relationship_cardinality_estimates"] = int(
-                result.rowcount or 0
-            )
-
-        if candidate_ids:
-            result = connection.execute(
-                relationship_candidate_scores_table.delete().where(
-                    relationship_candidate_scores_table.c.candidate_id.in_(
-                        candidate_ids
-                    )
-                )
-            )
-            removed["relationship_candidate_scores"] = int(
-                result.rowcount or 0
-            )
-
-        result = connection.execute(
-            relationship_candidates_table.delete().where(
-                or_(
-                    relationship_candidates_table.c.source_table == table_name,
-                    relationship_candidates_table.c.target_table == table_name,
-                )
-            )
-        )
-        removed["relationship_candidates"] = int(
-            result.rowcount or 0
-        )
-
-        if relationship_ids:
-            result = connection.execute(
-                relationship_columns_table.delete().where(
-                    relationship_columns_table.c.relationship_id.in_(
-                        relationship_ids
-                    )
-                )
-            )
-            removed["relationship_columns"] = int(
-                result.rowcount or 0
-            )
-
-        result = connection.execute(
-            relationships_table.delete().where(
-                or_(
-                    relationships_table.c.source_table == table_name,
-                    relationships_table.c.target_table == table_name,
-                )
-            )
-        )
-        removed["relationships"] = int(result.rowcount or 0)
-
-        for key, metadata_table in (
-            ("column_profiles", column_profiles_table),
-            ("profile_jobs", profile_jobs_table),
-            ("column_settings", column_settings_table),
-            ("schema_mapping", schema_mapping_table),
-            ("table_state", table_state_table),
-        ):
-            result = connection.execute(
-                metadata_table.delete().where(
-                    metadata_table.c.table_name == table_name
-                )
-            )
-            removed[key] = int(result.rowcount or 0)
-
-        # PostgreSQL DDL bersifat transactional. Jika DROP gagal karena
-        # dependency database lain (mis. view), seluruh cleanup di atas
-        # ikut rollback sehingga metadata tidak menjadi setengah terhapus.
-        connection.execute(
-            text(f"DROP TABLE {quoted_table}")
-        )
-
-    return {
-        "table_name": table_name,
-        "deleted": True,
-        "row_count": int(summary.get("row_count") or 0),
-        "column_count": int(summary.get("column_count") or 0),
-        "metadata_removed": removed,
-    }
 
 
 def get_table_column_details(table_name: str):

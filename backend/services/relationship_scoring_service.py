@@ -5,7 +5,6 @@ from database.table_service import (
     create_relationship_scoring_job_record,
     get_column_profiles_for_tables,
     get_recoverable_relationship_scoring_jobs,
-    get_relationship_candidate_scores,
     get_relationship_candidates_for_scoring,
     get_relationship_scoring_job,
     get_relationship_scoring_jobs,

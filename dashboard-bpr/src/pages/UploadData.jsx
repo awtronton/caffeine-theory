@@ -11,7 +11,6 @@ import {
 import {
   UploadCloud,
   FileSpreadsheet,
-  Database,
   CalendarDays,
   Table2,
   CheckCircle2,
@@ -30,7 +29,6 @@ import {
 
 import CaffeineDropdown from '../components/ui/CaffeineDropdown'
 import DashboardLayout from '../layouts/DashboardLayout'
-import WorkspacePageHeader from '../components/ui/WorkspacePageHeader'
 import '../styles/upload-vibe.css'
 
 const months = [
@@ -773,13 +771,6 @@ function UploadData() {
   return (
     <DashboardLayout>
       <main className="tp-upload-page mx-auto w-full max-w-[1480px] space-y-5">
-        <WorkspacePageHeader
-          eyebrow="Data Warehouse"
-          title="Upload Data"
-          description="Tambahkan data XLS/XLSX ke warehouse, tentukan bank dan periode, lalu validasi hasil cleaning sebelum disimpan ke PostgreSQL."
-          icon={Database}
-          badge="Upload Workspace"
-        />
 
         {message && (
           <div
@@ -1610,7 +1601,7 @@ function UploadData() {
                           ).map((column) => (
                             <td
                               key={`${row.__row_id}-${column}`}
-                              className="tp-preview-cell whitespace-nowrap px-4 py-3 text-slate-600"
+                              className="whitespace-nowrap px-4 py-3 text-slate-600"
                             >
                               <span title={safeCellValue(row?.[column])}>
                                 {previewCellValue(row?.[column])}

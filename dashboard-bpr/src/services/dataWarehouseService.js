@@ -384,3 +384,74 @@ export async function previewQuery(payload, { signal } = {}) {
     "Gagal menjalankan data preview"
   );
 }
+
+
+export async function listSavedQueries() {
+  return requestJson(
+    `${API_URL}/saved-queries`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca saved query"
+  );
+}
+
+export async function getSavedQuery(queryId) {
+  return requestJson(
+    `${API_URL}/saved-queries/${queryId}`,
+    {
+      method: "GET",
+    },
+    "Gagal membuka saved query"
+  );
+}
+
+export async function createSavedQuery(payload) {
+  return requestJson(
+    `${API_URL}/saved-queries`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    "Gagal menyimpan query"
+  );
+}
+
+export async function updateSavedQuery(queryId, payload) {
+  return requestJson(
+    `${API_URL}/saved-queries/${queryId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+    "Gagal memperbarui saved query"
+  );
+}
+
+export async function deleteSavedQuery(queryId) {
+  return requestJson(
+    `${API_URL}/saved-queries/${queryId}`,
+    {
+      method: "DELETE",
+    },
+    "Gagal menghapus saved query"
+  );
+}
+
+export async function createOutputTable(payload) {
+  return requestJson(
+    `${API_URL}/query/materialize`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Gagal membuat output table"
+  );
+}
