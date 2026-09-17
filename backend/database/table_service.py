@@ -39,6 +39,23 @@ RELATIONSHIP_CANDIDATES_TABLE_NAME = "warehouse_relationship_candidates"
 RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME = "warehouse_relationship_candidate_jobs"
 RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME = "warehouse_relationship_candidate_scores"
 RELATIONSHIP_SCORING_JOBS_TABLE_NAME = "warehouse_relationship_scoring_jobs"
+
+# Historical metadata tables created by Relationship Intelligence /
+# Cardinality / Human Review checkpoints. They may remain in PostgreSQL
+# even when the current application no longer actively writes to them.
+RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME = (
+    "warehouse_relationship_cardinality_estimates"
+)
+RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME = (
+    "warehouse_relationship_cardinality_jobs"
+)
+RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME = (
+    "warehouse_relationship_review_candidates"
+)
+RELATIONSHIP_REVIEWS_TABLE_NAME = (
+    "warehouse_relationship_reviews"
+)
+
 SAVED_QUERIES_TABLE_NAME = "warehouse_saved_queries"
 OUTPUT_LINEAGE_TABLE_NAME = "warehouse_output_lineage"
 MASK_VALUE = "••••••••"
@@ -69,21 +86,46 @@ RELATIONSHIP_CARDINALITIES = {
     "many_to_one",
     "many_to_many",
 }
+# Central registry for every PostgreSQL table that belongs to Caffeine
+# Theory's application metadata rather than the user's warehouse data.
+#
+# IMPORTANT:
+# - Do not replace this with a blanket `warehouse_*` exclusion because a
+#   user may legitimately create a warehouse data table with that prefix.
+# - Any new internal metadata table must be registered here.
 INTERNAL_TABLES = {
+    # Core warehouse metadata
     SCHEMA_MAPPING_TABLE_NAME,
     COLUMN_SETTINGS_TABLE_NAME,
+    TABLE_STATE_TABLE_NAME,
+
+    # Relationship metadata
     RELATIONSHIPS_TABLE_NAME,
     RELATIONSHIP_COLUMNS_TABLE_NAME,
+
+    # Profiling / relationship intelligence metadata
     COLUMN_PROFILES_TABLE_NAME,
     PROFILE_JOBS_TABLE_NAME,
-    TABLE_STATE_TABLE_NAME,
     RELATIONSHIP_CANDIDATES_TABLE_NAME,
     RELATIONSHIP_CANDIDATE_JOBS_TABLE_NAME,
     RELATIONSHIP_CANDIDATE_SCORES_TABLE_NAME,
     RELATIONSHIP_SCORING_JOBS_TABLE_NAME,
+
+    # Historical cardinality / human-review metadata
+    RELATIONSHIP_CARDINALITY_ESTIMATES_TABLE_NAME,
+    RELATIONSHIP_CARDINALITY_JOBS_TABLE_NAME,
+    RELATIONSHIP_REVIEW_CANDIDATES_TABLE_NAME,
+    RELATIONSHIP_REVIEWS_TABLE_NAME,
+
+    # Visual SQL Builder metadata
     SAVED_QUERIES_TABLE_NAME,
     OUTPUT_LINEAGE_TABLE_NAME,
 }
+
+
+def is_internal_table(table_name: str) -> bool:
+    """Return True only for explicitly registered application metadata."""
+    return str(table_name or "").strip() in INTERNAL_TABLES
 
 
 # =====================================================
@@ -2548,7 +2590,7 @@ def get_all_tables():
     return sorted(
         table_name
         for table_name in inspector.get_table_names()
-        if table_name not in INTERNAL_TABLES
+        if not is_internal_table(table_name)
     )
 
 
