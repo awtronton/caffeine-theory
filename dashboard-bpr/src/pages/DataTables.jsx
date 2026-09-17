@@ -11,6 +11,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  GitBranch,
   LockKeyhole,
   PencilLine,
   RefreshCw,
@@ -24,6 +25,7 @@ import DashboardLayout from '../layouts/DashboardLayout'
 import {
   deleteWarehouseTable,
   getTableDetail,
+  getTableLineage,
   getTableSummaries,
   renameTableColumn,
   setTableColumnMasking,
@@ -53,6 +55,29 @@ function periodLabel(table) {
   return `${table.min_year ?? '-'}–${table.max_year ?? '-'}`
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return '-'
+  }
+
+  const parsed = new Date(value)
+
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value)
+  }
+
+  return new Intl.DateTimeFormat(
+    'id-ID',
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+  ).format(parsed)
+}
+
 function DataTables() {
   const [tables, setTables] = useState([])
   const [loading, setLoading] = useState(true)
@@ -62,6 +87,8 @@ function DataTables() {
   const [selectedTable, setSelectedTable] = useState('')
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [lineage, setLineage] = useState(null)
+  const [lineageError, setLineageError] = useState('')
 
   const [editingColumn, setEditingColumn] = useState('')
   const [editingValue, setEditingValue] = useState('')
@@ -115,6 +142,8 @@ function DataTables() {
       } else {
         setSelectedTable('')
         setDetail(null)
+        setLineage(null)
+        setLineageError('')
       }
     } catch (error) {
       console.error(error)
@@ -134,15 +163,39 @@ function DataTables() {
       setEditingValue('')
       setMessage('')
       setDetailLoading(true)
+      setLineageError('')
 
-      const result = await getTableDetail(
-        tableName,
+      const [
+        detailResult,
+        lineageResult,
+      ] = await Promise.all([
+        getTableDetail(tableName),
+        getTableLineage(tableName).catch(
+          (error) => {
+            console.error(error)
+
+            return {
+              lineage: null,
+              lineageError:
+                error.message ||
+                'Gagal membaca data lineage.',
+            }
+          },
+        ),
+      ])
+
+      setDetail(detailResult)
+      setLineage(
+        lineageResult?.lineage || null,
       )
-
-      setDetail(result)
+      setLineageError(
+        lineageResult?.lineageError || '',
+      )
     } catch (error) {
       console.error(error)
       setDetail(null)
+      setLineage(null)
+      setLineageError('')
       setMessage(
         error.message ||
           'Gagal membaca detail tabel.',
@@ -332,6 +385,8 @@ function DataTables() {
       setDeleteConfirmValue('')
       setSelectedTable('')
       setDetail(null)
+      setLineage(null)
+      setLineageError('')
 
       await loadTables({
         preserveSelection: false,
@@ -583,6 +638,315 @@ function DataTables() {
                     )}
                   </strong>
                 </div>
+              </div>
+            )}
+
+            {!detailLoading && lineage && (
+              <section className="tp-lineage-panel">
+                <div className="tp-lineage-header">
+                  <div className="tp-lineage-heading">
+                    <GitBranch size={14} />
+
+                    <strong>Data Lineage</strong>
+
+                    <span
+                      className={`tp-lineage-type-badge ${
+                        lineage.lineage_type ===
+                        'derived_table'
+                          ? 'is-derived'
+                          : 'is-source'
+                      }`}
+                    >
+                      {lineage.lineage_type ===
+                      'derived_table'
+                        ? 'Derived Table'
+                        : 'Source Table'}
+                    </span>
+                  </div>
+
+                  <p>
+                    {lineage.lineage_type ===
+                    'derived_table'
+                      ? 'Direct upstream lineage dari materialisasi Visual SQL Builder.'
+                      : 'Belum ada upstream transformation yang direkam untuk tabel ini.'}
+                  </p>
+                </div>
+
+                {lineage.lineage_type ===
+                'derived_table' ? (
+                  <>
+                    <div className="tp-lineage-summary">
+                      <div>
+                        <span>Base Table</span>
+                        <strong>
+                          {lineage.base_table || '-'}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Sources</span>
+                        <strong>
+                          {formatNumber(
+                            lineage.transformation
+                              ?.source_count,
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Joins</span>
+                        <strong>
+                          {formatNumber(
+                            lineage.transformation
+                              ?.join_count,
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Created</span>
+                        <strong>
+                          {formatDateTime(
+                            lineage.created_at,
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="tp-lineage-body">
+                      <div className="tp-lineage-block">
+                        <span className="tp-lineage-label">
+                          Upstream tables
+                        </span>
+
+                        <div className="tp-lineage-source-list">
+                          {(lineage.source_details ||
+                            []).map((source) => {
+                            const canOpen =
+                              Boolean(
+                                source.available,
+                              ) &&
+                              tables.some(
+                                (table) =>
+                                  table.table_name ===
+                                  source.table_name,
+                              )
+
+                            return (
+                              <button
+                                key={
+                                  source.table_name
+                                }
+                                type="button"
+                                className={`tp-lineage-source-chip ${
+                                  source.is_base_table
+                                    ? 'is-base'
+                                    : ''
+                                }`}
+                                disabled={!canOpen}
+                                onClick={() =>
+                                  selectTable(
+                                    source.table_name,
+                                  )
+                                }
+                                title={
+                                  canOpen
+                                    ? `Buka ${source.table_name}`
+                                    : `${source.table_name} tidak tersedia di katalog`
+                                }
+                              >
+                                <Database
+                                  size={11}
+                                />
+
+                                <span>
+                                  {
+                                    source.table_name
+                                  }
+                                </span>
+
+                                {source.is_base_table && (
+                                  <em>Base</em>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="tp-lineage-transformation-row">
+                        <div>
+                          <span>Transformation</span>
+                          <strong>
+                            {lineage.transformation
+                              ?.engine ||
+                              'Visual SQL Builder'}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Output</span>
+                          <strong>
+                            {formatNumber(
+                              lineage.transformation
+                                ?.output_count,
+                            )}{' '}
+                            columns
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Filters</span>
+                          <strong>
+                            {formatNumber(
+                              lineage.transformation
+                                ?.filter_count,
+                            )}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Sort</span>
+                          <strong>
+                            {lineage.transformation
+                              ?.has_sort
+                              ? 'Yes'
+                              : 'No'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="tp-lineage-query-row">
+                        <span>
+                          Saved Query
+                        </span>
+
+                        <strong>
+                          {lineage.source_saved_query
+                            ?.available
+                            ? lineage
+                                .source_saved_query
+                                .query_name
+                            : lineage
+                                  .source_saved_query
+                                  ?.id
+                              ? `Query #${lineage.source_saved_query.id} sudah tidak tersedia`
+                              : 'Ad hoc query'}
+                        </strong>
+                      </div>
+
+                      {lineage.description && (
+                        <div className="tp-lineage-description">
+                          {
+                            lineage.description
+                          }
+                        </div>
+                      )}
+
+                      <div className="tp-lineage-block">
+                        <span className="tp-lineage-label">
+                          Column lineage
+                        </span>
+
+                        <div className="tp-lineage-column-wrap">
+                          <table className="tp-lineage-column-table">
+                            <thead>
+                              <tr>
+                                <th>
+                                  Output Column
+                                </th>
+                                <th>
+                                  Source
+                                </th>
+                                <th>
+                                  State
+                                </th>
+                              </tr>
+                            </thead>
+
+                            <tbody>
+                              {(lineage.column_lineage ||
+                                []).map(
+                                (column) => (
+                                  <tr
+                                    key={
+                                      column.output_column
+                                    }
+                                  >
+                                    <td>
+                                      <code>
+                                        {
+                                          column.output_column
+                                        }
+                                      </code>
+                                    </td>
+
+                                    <td>
+                                      <code>
+                                        {column.source_reference ||
+                                          '-'}
+                                      </code>
+                                    </td>
+
+                                    <td>
+                                      <span
+                                        className={`tp-lineage-mask-badge ${
+                                          column.masked
+                                            ? 'is-masked'
+                                            : ''
+                                        }`}
+                                      >
+                                        {column.masked
+                                          ? 'Masked'
+                                          : 'Visible'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ),
+                              )}
+
+                              {(lineage.column_lineage ||
+                                []).length ===
+                                0 && (
+                                <tr>
+                                  <td
+                                    colSpan="3"
+                                    className="tp-lineage-empty"
+                                  >
+                                    Column lineage
+                                    belum tersedia.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="tp-lineage-source-note">
+                    <Database size={15} />
+
+                    <div>
+                      <strong>
+                        No upstream lineage recorded
+                      </strong>
+
+                      <span>
+                        Tabel ini diperlakukan sebagai
+                        source table pada lineage Caffeine
+                        Theory saat ini.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {!detailLoading && lineageError && (
+              <div className="tp-lineage-error">
+                {lineageError}
               </div>
             )}
 

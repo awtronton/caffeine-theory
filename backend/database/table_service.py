@@ -850,6 +850,70 @@ def delete_saved_query(query_id: int):
     }
 
 
+def resolve_saved_query_id_for_definition(
+    query_definition: dict,
+    preferred_query_id: int | None = None,
+):
+    """Resolve the Saved Query linked to an exact structured query definition.
+
+    Rules:
+    - If a preferred ID is supplied, it must exist and match exactly.
+    - If no preferred ID is supplied, infer only when exactly one Saved Query
+      has the same structured definition.
+    - Multiple matching Saved Queries are intentionally treated as ambiguous.
+    """
+    ensure_internal_tables()
+
+    definition = dict(query_definition or {})
+
+    if preferred_query_id is not None:
+        preferred_query_id = int(
+            preferred_query_id
+        )
+        saved_query = get_saved_query(
+            preferred_query_id
+        )
+
+        if (
+            dict(
+                saved_query.get(
+                    "query_definition"
+                ) or {}
+            )
+            != definition
+        ):
+            raise ValueError(
+                "Query saat ini berbeda dari Saved Query "
+                "yang dipilih. Simpan perubahan terlebih "
+                "dahulu atau buat output table tanpa "
+                "referensi Saved Query."
+            )
+
+        return preferred_query_id
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(
+                saved_queries_table.c.id,
+                saved_queries_table.c.query_definition,
+            )
+        ).mappings().all()
+
+    matches = [
+        int(row["id"])
+        for row in rows
+        if dict(
+            row["query_definition"] or {}
+        )
+        == definition
+    ]
+
+    if len(matches) == 1:
+        return matches[0]
+
+    return None
+
+
 # =====================================================
 # MATERIALIZED OUTPUT METADATA / LINEAGE
 # =====================================================
@@ -912,10 +976,18 @@ def register_materialized_output_metadata(
 def get_output_lineage(table_name: str):
     table_name = validate_table_name(table_name)
     ensure_internal_tables()
+
     with engine.connect() as connection:
-        row = connection.execute(select(output_lineage_table).where(output_lineage_table.c.output_table == table_name)).mappings().one_or_none()
+        row = connection.execute(
+            select(output_lineage_table).where(
+                output_lineage_table.c.output_table
+                == table_name
+            )
+        ).mappings().one_or_none()
+
     if row is None:
         return None
+
     return {
         "id": int(row["id"]),
         "output_table": row["output_table"],
@@ -924,10 +996,293 @@ def get_output_lineage(table_name: str):
         "source_tables": row["source_tables"] or [],
         "query_definition": row["query_definition"] or {},
         "output_columns": row["output_columns"] or [],
-        "masked_output_columns": row["masked_output_columns"] or [],
-        "source_saved_query_id": row["source_saved_query_id"],
-        "row_count": int(row["row_count"]) if row["row_count"] is not None else None,
+        "masked_output_columns":
+            row["masked_output_columns"] or [],
+        "source_saved_query_id":
+            (
+                int(row["source_saved_query_id"])
+                if row["source_saved_query_id"]
+                is not None
+                else None
+            ),
+        "row_count":
+            (
+                int(row["row_count"])
+                if row["row_count"] is not None
+                else None
+            ),
         "created_at": row["created_at"],
+    }
+
+
+def _lineage_saved_query_snapshot(
+    query_id: int | None,
+):
+    if query_id is None:
+        return None
+
+    query_id = int(query_id)
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(
+                saved_queries_table.c.id,
+                saved_queries_table.c.query_name,
+                saved_queries_table.c.description,
+            ).where(
+                saved_queries_table.c.id == query_id
+            )
+        ).mappings().one_or_none()
+
+    if row is None:
+        return {
+            "id": query_id,
+            "query_name": None,
+            "description": None,
+            "available": False,
+        }
+
+    return {
+        "id": int(row["id"]),
+        "query_name": row["query_name"],
+        "description": row["description"],
+        "available": True,
+    }
+
+
+def _lineage_column_rows(
+    table_name: str,
+):
+    mapping = get_schema_mapping(table_name)
+    masked_columns = get_masked_columns(table_name)
+
+    rows = []
+
+    for item in mapping:
+        source_reference = str(
+            item.get("source_column") or ""
+        ).strip()
+        source_table = None
+        source_column = None
+
+        if "." in source_reference:
+            source_table, source_column = (
+                source_reference.split(".", 1)
+            )
+
+        output_column = item["database_column"]
+
+        rows.append(
+            {
+                "ordinal": int(
+                    item.get("source_ordinal") or 0
+                ),
+                "output_column": output_column,
+                "source_reference":
+                    source_reference or None,
+                "source_table":
+                    source_table or None,
+                "source_column":
+                    source_column or None,
+                "masked":
+                    output_column in masked_columns,
+            }
+        )
+
+    return rows
+
+
+def get_table_lineage(
+    table_name: str,
+):
+    """Return direct upstream lineage for one user-facing warehouse table.
+
+    6F.1 intentionally exposes one-hop lineage only. Recursive lineage and
+    downstream impact analysis are reserved for the next lineage stage.
+    """
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+
+    inspector = inspect(engine)
+
+    if not inspector.has_table(table_name):
+        raise ValueError(
+            f"Tabel '{table_name}' tidak ditemukan."
+        )
+
+    output_lineage = get_output_lineage(
+        table_name
+    )
+
+    if output_lineage is None:
+        return {
+            "table_name": table_name,
+            "lineage_type": "source_table",
+            "origin": "warehouse_source",
+            "has_upstream_lineage": False,
+            "description": None,
+            "base_table": None,
+            "source_tables": [],
+            "source_saved_query": None,
+            "transformation": None,
+            "column_lineage": [],
+            "row_count": None,
+            "created_at": None,
+        }
+
+    definition = dict(
+        output_lineage.get(
+            "query_definition"
+        ) or {}
+    )
+    joins = list(
+        definition.get("joins") or []
+    )
+    selected_columns = list(
+        definition.get(
+            "selected_columns"
+        ) or []
+    )
+    filters = list(
+        definition.get("filters") or []
+    )
+    sort_by = (
+        dict(definition["sort_by"])
+        if definition.get("sort_by")
+        else None
+    )
+    source_tables = [
+        validate_table_name(value)
+        for value in (
+            output_lineage.get(
+                "source_tables"
+            ) or []
+        )
+    ]
+
+    available_tables = set(
+        inspector.get_table_names()
+    )
+
+    source_details = [
+        {
+            "table_name": source_table,
+            "available":
+                (
+                    source_table
+                    in available_tables
+                    and not is_internal_table(
+                        source_table
+                    )
+                ),
+            "is_base_table":
+                source_table
+                == output_lineage["base_table"],
+        }
+        for source_table in source_tables
+    ]
+
+    join_types = []
+
+    for join in joins:
+        join_type = str(
+            join.get("join_type") or ""
+        ).strip().upper()
+
+        if (
+            join_type
+            and join_type not in join_types
+        ):
+            join_types.append(
+                join_type
+            )
+
+    explicit_saved_query_id = (
+        output_lineage.get(
+            "source_saved_query_id"
+        )
+    )
+
+    resolved_saved_query_id = (
+        explicit_saved_query_id
+    )
+    saved_query_link_mode = (
+        "explicit"
+        if explicit_saved_query_id
+        is not None
+        else "none"
+    )
+
+    if resolved_saved_query_id is None:
+        resolved_saved_query_id = (
+            resolve_saved_query_id_for_definition(
+                definition
+            )
+        )
+
+        if (
+            resolved_saved_query_id
+            is not None
+        ):
+            saved_query_link_mode = (
+                "inferred"
+            )
+
+    return {
+        "table_name": table_name,
+        "lineage_id":
+            output_lineage["id"],
+        "lineage_type": "derived_table",
+        "origin": "visual_sql_builder",
+        "has_upstream_lineage": True,
+        "description":
+            output_lineage["description"],
+        "base_table":
+            output_lineage["base_table"],
+        "source_tables":
+            source_tables,
+        "source_details":
+            source_details,
+        "source_saved_query":
+            _lineage_saved_query_snapshot(
+                resolved_saved_query_id
+            ),
+        "source_saved_query_link_mode":
+            saved_query_link_mode,
+        "transformation": {
+            "engine":
+                "Visual SQL Builder",
+            "source_count":
+                len(source_tables),
+            "join_count":
+                len(joins),
+            "join_types":
+                join_types,
+            "output_count":
+                (
+                    len(selected_columns)
+                    if selected_columns
+                    else len(
+                        output_lineage.get(
+                            "output_columns"
+                        ) or []
+                    )
+                ),
+            "filter_count":
+                len(filters),
+            "has_sort":
+                bool(sort_by),
+            "sort_by":
+                sort_by,
+        },
+        "column_lineage":
+            _lineage_column_rows(
+                table_name
+            ),
+        "row_count":
+            output_lineage["row_count"],
+        "created_at":
+            output_lineage["created_at"],
     }
 
 

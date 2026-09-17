@@ -12,10 +12,10 @@ from database.table_service import (
     MASK_VALUE,
     ensure_internal_tables,
     get_masked_columns,
-    get_saved_query,
     get_table_column_details,
     get_table_relationships,
     register_materialized_output_metadata,
+    resolve_saved_query_id_for_definition,
     validate_column_name,
     validate_table_name,
 )
@@ -692,10 +692,13 @@ def execute_query_materialization(
         "filters": filters,
         "sort_by": sort_by,
     }
-    if source_saved_query_id is not None:
-        saved_query = get_saved_query(int(source_saved_query_id))
-        if saved_query.get("query_definition") != query_definition:
-            raise ValueError("Query saat ini berbeda dari Saved Query yang dipilih. Simpan perubahan terlebih dahulu atau buat output table tanpa referensi Saved Query.")
+    resolved_saved_query_id = (
+        resolve_saved_query_id_for_definition(
+            query_definition,
+            preferred_query_id=
+                source_saved_query_id,
+        )
+    )
 
     sql, output_columns, filter_params = _build_query_sql(
         base_table=base_table, joins=joins, selected_columns=selected_columns, filters=filters, sort_by=sort_by, paginate=False
@@ -730,7 +733,7 @@ def execute_query_materialization(
             query_definition=query_definition,
             output_columns=materialized_columns,
             masked_output_columns=masked_output_columns,
-            source_saved_query_id=source_saved_query_id,
+            source_saved_query_id=resolved_saved_query_id,
             row_count=row_count,
         )
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
@@ -742,7 +745,7 @@ def execute_query_materialization(
         "source_tables": preflight["tables"],
         "output_columns": materialized_columns,
         "masked_output_columns": masked_output_columns,
-        "source_saved_query_id": source_saved_query_id,
+        "source_saved_query_id": resolved_saved_query_id,
         "lineage_id": lineage["lineage_id"],
         "elapsed_ms": elapsed_ms,
         "preflight": preflight,

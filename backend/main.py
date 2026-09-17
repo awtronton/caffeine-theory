@@ -22,6 +22,7 @@ from database.table_service import (
     get_table_explorer_options,
     get_table_relationships,
     get_table_summary,
+    get_table_lineage,
     get_saved_query,
     list_saved_queries,
     explore_table_data,
@@ -71,7 +72,7 @@ from services.query_execution_service import (
 
 app = FastAPI(
     title="OJK Data Warehouse API",
-    version="1.11.0",
+    version="1.12.0",
 )
 
 
@@ -556,6 +557,30 @@ def table_detail(table_name: str):
     except Exception as error:
         print(
             "ERROR /tables/{table_name}/detail:",
+            repr(error),
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.get("/tables/{table_name}/lineage")
+def table_lineage(table_name: str):
+    try:
+        lineage = get_table_lineage(
+            table_name
+        )
+
+        return {
+            "status": "success",
+            "lineage": lineage,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR /tables/{table_name}/lineage:",
             repr(error),
         )
 

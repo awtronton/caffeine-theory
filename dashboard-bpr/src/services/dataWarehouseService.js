@@ -194,6 +194,16 @@ export async function getTableDetail(tableName) {
   );
 }
 
+export async function getTableLineage(tableName) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/lineage`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca data lineage"
+  );
+}
+
 export async function deleteWarehouseTable(tableName) {
   return requestJson(
     `${API_URL}/tables/${encodeURIComponent(tableName)}`,
