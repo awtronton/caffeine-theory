@@ -23,6 +23,7 @@ from database.table_service import (
     get_table_relationships,
     get_table_summary,
     get_table_lineage,
+    get_table_lineage_graph,
     get_saved_query,
     list_saved_queries,
     explore_table_data,
@@ -72,7 +73,7 @@ from services.query_execution_service import (
 
 app = FastAPI(
     title="OJK Data Warehouse API",
-    version="1.12.0",
+    version="1.13.0",
 )
 
 
@@ -581,6 +582,38 @@ def table_lineage(table_name: str):
     except Exception as error:
         print(
             "ERROR /tables/{table_name}/lineage:",
+            repr(error),
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+
+@app.get("/tables/{table_name}/lineage/graph")
+def table_lineage_graph(
+    table_name: str,
+    max_depth: int = Query(
+        8,
+        ge=1,
+        le=20,
+    ),
+):
+    try:
+        graph = get_table_lineage_graph(
+            table_name,
+            max_depth=max_depth,
+        )
+
+        return {
+            "status": "success",
+            "graph": graph,
+        }
+
+    except Exception as error:
+        print(
+            "ERROR /tables/{table_name}/lineage/graph:",
             repr(error),
         )
 

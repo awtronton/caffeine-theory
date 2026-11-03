@@ -204,6 +204,24 @@ export async function getTableLineage(tableName) {
   );
 }
 
+export async function getTableLineageGraph(
+  tableName,
+  {
+    maxDepth = 8,
+  } = {}
+) {
+  const params = new URLSearchParams();
+  params.set("max_depth", String(maxDepth));
+
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/lineage/graph?${params.toString()}`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca lineage graph"
+  );
+}
+
 export async function deleteWarehouseTable(tableName) {
   return requestJson(
     `${API_URL}/tables/${encodeURIComponent(tableName)}`,

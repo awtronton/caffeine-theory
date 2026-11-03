@@ -1286,6 +1286,322 @@ def get_table_lineage(
     }
 
 
+def get_table_lineage_graph(
+    table_name: str,
+    *,
+    max_depth: int = 8,
+):
+    """Build a recursive upstream lineage graph for one warehouse table.
+
+    The graph is metadata-only:
+    - nodes are warehouse tables;
+    - edges point from upstream source -> derived output;
+    - traversal never mutates warehouse data;
+    - cycles are guarded even if inconsistent metadata exists.
+    """
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+
+    max_depth = max(1, min(int(max_depth), 20))
+
+    inspector = inspect(engine)
+    available_tables = set(
+        inspector.get_table_names()
+    )
+
+    if table_name not in available_tables:
+        raise ValueError(
+            f"Tabel '{table_name}' tidak ditemukan."
+        )
+
+    if is_internal_table(table_name):
+        raise ValueError(
+            "Internal metadata table tidak dapat "
+            "ditampilkan sebagai lineage graph."
+        )
+
+    lineage_rows = {}
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(output_lineage_table)
+        ).mappings().all()
+
+    for row in rows:
+        output_table = str(
+            row["output_table"]
+        ).strip()
+
+        if not output_table:
+            continue
+
+        lineage_rows[output_table] = {
+            "id": int(row["id"]),
+            "output_table": output_table,
+            "description": row["description"],
+            "base_table": row["base_table"],
+            "source_tables":
+                list(row["source_tables"] or []),
+            "query_definition":
+                dict(row["query_definition"] or {}),
+            "source_saved_query_id":
+                (
+                    int(row["source_saved_query_id"])
+                    if row["source_saved_query_id"]
+                    is not None
+                    else None
+                ),
+            "row_count":
+                (
+                    int(row["row_count"])
+                    if row["row_count"]
+                    is not None
+                    else None
+                ),
+            "created_at": row["created_at"],
+        }
+
+    nodes = {}
+    edges = {}
+    truncated = False
+    cycle_detected = False
+
+    def ensure_node(
+        current_table: str,
+        depth: int,
+    ):
+        nonlocal truncated
+
+        current_table = validate_table_name(
+            current_table
+        )
+
+        current_row = lineage_rows.get(
+            current_table
+        )
+        current_available = (
+            current_table in available_tables
+            and not is_internal_table(
+                current_table
+            )
+        )
+
+        node_type = (
+            "derived_table"
+            if current_row is not None
+            else "source_table"
+        )
+
+        existing = nodes.get(
+            current_table
+        )
+
+        if existing is None:
+            saved_query = None
+            saved_query_link_mode = "none"
+
+            if current_row is not None:
+                definition = dict(
+                    current_row.get(
+                        "query_definition"
+                    ) or {}
+                )
+                saved_query_id = (
+                    current_row.get(
+                        "source_saved_query_id"
+                    )
+                )
+
+                if saved_query_id is not None:
+                    saved_query_link_mode = (
+                        "explicit"
+                    )
+                else:
+                    saved_query_id = (
+                        resolve_saved_query_id_for_definition(
+                            definition
+                        )
+                    )
+
+                    if saved_query_id is not None:
+                        saved_query_link_mode = (
+                            "inferred"
+                        )
+
+                saved_query = (
+                    _lineage_saved_query_snapshot(
+                        saved_query_id
+                    )
+                )
+
+            nodes[current_table] = {
+                "id": current_table,
+                "table_name": current_table,
+                "lineage_type": node_type,
+                "available": current_available,
+                "depth": int(depth),
+                "is_selected":
+                    current_table == table_name,
+                "description":
+                    (
+                        current_row.get(
+                            "description"
+                        )
+                        if current_row
+                        else None
+                    ),
+                "row_count":
+                    (
+                        current_row.get(
+                            "row_count"
+                        )
+                        if current_row
+                        else None
+                    ),
+                "created_at":
+                    (
+                        current_row.get(
+                            "created_at"
+                        )
+                        if current_row
+                        else None
+                    ),
+                "saved_query":
+                    saved_query,
+                "saved_query_link_mode":
+                    saved_query_link_mode,
+            }
+        else:
+            # If the same node is reached through multiple branches,
+            # preserve the shortest distance to the selected table.
+            existing["depth"] = min(
+                int(existing["depth"]),
+                int(depth),
+            )
+
+        if (
+            current_row is not None
+            and depth >= max_depth
+            and current_row.get(
+                "source_tables"
+            )
+        ):
+            truncated = True
+
+        return current_row
+
+    def walk(
+        current_table: str,
+        depth: int,
+        path: tuple,
+    ):
+        nonlocal cycle_detected
+
+        current_row = ensure_node(
+            current_table,
+            depth,
+        )
+
+        if current_row is None:
+            return
+
+        if depth >= max_depth:
+            return
+
+        for source_table in (
+            current_row.get(
+                "source_tables"
+            ) or []
+        ):
+            source_table = validate_table_name(
+                source_table
+            )
+
+            ensure_node(
+                source_table,
+                depth + 1,
+            )
+
+            edge_key = (
+                source_table,
+                current_table,
+            )
+
+            if edge_key not in edges:
+                edges[edge_key] = {
+                    "id":
+                        f"{source_table}::{current_table}",
+                    "source": source_table,
+                    "target": current_table,
+                }
+
+            if source_table in path:
+                cycle_detected = True
+                continue
+
+            walk(
+                source_table,
+                depth + 1,
+                path + (source_table,),
+            )
+
+    walk(
+        table_name,
+        0,
+        (table_name,),
+    )
+
+    node_rows = sorted(
+        nodes.values(),
+        key=lambda item: (
+            -int(item["depth"]),
+            item["table_name"],
+        ),
+    )
+    edge_rows = sorted(
+        edges.values(),
+        key=lambda item: (
+            item["target"],
+            item["source"],
+        ),
+    )
+
+    max_observed_depth = max(
+        (
+            int(item["depth"])
+            for item in node_rows
+        ),
+        default=0,
+    )
+
+    return {
+        "table_name": table_name,
+        "direction": "upstream",
+        "max_depth": max_depth,
+        "max_observed_depth":
+            max_observed_depth,
+        "node_count": len(node_rows),
+        "edge_count": len(edge_rows),
+        "derived_count": sum(
+            1
+            for item in node_rows
+            if item["lineage_type"]
+            == "derived_table"
+        ),
+        "source_count": sum(
+            1
+            for item in node_rows
+            if item["lineage_type"]
+            == "source_table"
+        ),
+        "truncated": bool(truncated),
+        "cycle_detected":
+            bool(cycle_detected),
+        "nodes": node_rows,
+        "edges": edge_rows,
+    }
+
+
 # =====================================================
 # COLUMN PROFILING METADATA
 # =====================================================
