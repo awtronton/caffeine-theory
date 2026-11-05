@@ -5,14 +5,17 @@ from sqlalchemy import inspect, text
 
 from database.connection import engine
 from database.table_service import (
+    SYSTEM_COLUMNS,
     claim_profile_job,
     create_profile_job_record,
     get_profile_job,
     get_profile_jobs,
     get_recoverable_profile_jobs,
     get_table_column_profiles,
+    get_table_completeness,
     get_table_data_version,
     mark_table_profile_stale,
+    register_completeness_snapshot,
     table_exists,
     update_profile_job_progress,
     update_profile_job_record,
@@ -285,6 +288,29 @@ def _create_temp_sample(
     return temp_name, sample_count
 
 
+def _completeness_severity(
+    missing_ratio: float | None,
+) -> str:
+    if missing_ratio is None:
+        return "unknown"
+
+    value = max(
+        0.0,
+        min(1.0, float(missing_ratio)),
+    )
+
+    if value == 0:
+        return "clean"
+    if value <= 0.01:
+        return "low"
+    if value <= 0.05:
+        return "medium"
+    if value <= 0.15:
+        return "high"
+
+    return "critical"
+
+
 def _profile_column(
     connection,
     *,
@@ -300,46 +326,107 @@ def _profile_column(
     quoted_temp = _quoted_identifier(temp_name)
     quoted_column = _quoted_identifier(column_name)
 
+    family = _type_family(data_type)
+
     # Prefix truncation protects memory when profiling large text/blob-like
     # columns. Relationship keys are normally far below this length.
     normalized_expression = (
         f"LEFT(CAST({quoted_column} AS TEXT), 512)"
     )
 
+    blank_expression = (
+        (
+            "COUNT(*) FILTER (WHERE "
+            f"{quoted_column} IS NOT NULL "
+            "AND BTRIM(CAST("
+            f"{quoted_column} AS TEXT)) = '')"
+            "::bigint"
+        )
+        if family == "text"
+        else "0::bigint"
+    )
+
     stats_sql = text(
         f"""
         SELECT
-            COUNT({quoted_column})::bigint AS non_null_count,
-            COUNT(DISTINCT {normalized_expression})::bigint AS distinct_count,
+            COUNT({quoted_column})::bigint
+                AS non_null_count,
+            COUNT(*) FILTER (
+                WHERE {quoted_column} IS NULL
+            )::bigint
+                AS null_count,
+            {blank_expression}
+                AS blank_count,
+            COUNT(
+                DISTINCT {normalized_expression}
+            )::bigint
+                AS distinct_count,
             AVG(
                 LEAST(
-                    LENGTH(CAST({quoted_column} AS TEXT)),
+                    LENGTH(
+                        CAST(
+                            {quoted_column}
+                            AS TEXT
+                        )
+                    ),
                     512
                 )
-            )::double precision AS avg_length
+            )::double precision
+                AS avg_length
         FROM {quoted_temp}
         """
     )
 
-    stats = connection.execute(stats_sql).mappings().one()
+    stats = connection.execute(
+        stats_sql
+    ).mappings().one()
 
-    non_null_count = int(stats["non_null_count"] or 0)
-    distinct_count = int(stats["distinct_count"] or 0)
+    non_null_count = int(
+        stats["non_null_count"] or 0
+    )
+    null_count = int(
+        stats["null_count"] or 0
+    )
+    blank_count = int(
+        stats["blank_count"] or 0
+    )
+    distinct_count = int(
+        stats["distinct_count"] or 0
+    )
+    missing_count = min(
+        int(sample_row_count or 0),
+        null_count + blank_count,
+    )
 
     null_ratio = None
+    missing_ratio = None
+    completeness_ratio = None
+
     if sample_row_count > 0:
         null_ratio = round(
             max(
                 0.0,
                 min(
                     1.0,
-                    1.0
-                    - (
-                        float(non_null_count)
-                        / float(sample_row_count)
-                    ),
+                    float(null_count)
+                    / float(sample_row_count),
                 ),
             ),
+            8,
+        )
+        missing_ratio = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    float(missing_count)
+                    / float(sample_row_count),
+                ),
+            ),
+            8,
+        )
+        completeness_ratio = round(
+            1.0 - missing_ratio,
             8,
         )
 
@@ -357,17 +444,26 @@ def _profile_column(
             8,
         )
 
-    family = _type_family(data_type)
     fingerprints = []
 
-    if _fingerprint_supported(family) and non_null_count > 0:
+    if (
+        _fingerprint_supported(family)
+        and non_null_count > 0
+    ):
         value_rows = connection.execute(
             text(
                 f"""
-                SELECT DISTINCT {normalized_expression} AS value
+                SELECT DISTINCT
+                    {normalized_expression}
+                    AS value
                 FROM {quoted_temp}
-                WHERE {quoted_column} IS NOT NULL
-                LIMIT {int(FINGERPRINT_SOURCE_VALUES)}
+                WHERE {quoted_column}
+                    IS NOT NULL
+                LIMIT {
+                    int(
+                        FINGERPRINT_SOURCE_VALUES
+                    )
+                }
                 """
             )
         ).scalars().all()
@@ -375,28 +471,70 @@ def _profile_column(
         hashes = {
             digest
             for value in value_rows
-            if (digest := _normalize_hash_value(value))
+            if (
+                digest
+                := _normalize_hash_value(
+                    value
+                )
+            )
         }
-        fingerprints = sorted(hashes)[:MAX_FINGERPRINT_VALUES]
+        fingerprints = sorted(
+            hashes
+        )[:MAX_FINGERPRINT_VALUES]
 
     return {
         "data_type": data_type,
         "type_family": family,
         "profile_mode": profile_mode,
-        "row_count_estimate": row_count_estimate,
-        "table_size_bytes": table_size_bytes,
-        "sample_row_count": sample_row_count,
-        "sample_non_null_count": non_null_count,
-        "sample_distinct_count": distinct_count,
-        "null_ratio": null_ratio,
-        "distinct_ratio": distinct_ratio,
-        "avg_length": (
-            round(float(stats["avg_length"]), 4)
-            if stats["avg_length"] is not None
-            else None
-        ),
-        "value_fingerprint": fingerprints,
-        "fingerprint_version": "sha256_min64_v1",
+        "row_count_estimate":
+            row_count_estimate,
+        "table_size_bytes":
+            table_size_bytes,
+        "sample_row_count":
+            sample_row_count,
+        "sample_non_null_count":
+            non_null_count,
+        "sample_distinct_count":
+            distinct_count,
+        "null_ratio":
+            null_ratio,
+        "distinct_ratio":
+            distinct_ratio,
+        "avg_length":
+            (
+                round(
+                    float(
+                        stats["avg_length"]
+                    ),
+                    4,
+                )
+                if stats["avg_length"]
+                is not None
+                else None
+            ),
+        "value_fingerprint":
+            fingerprints,
+        "fingerprint_version":
+            "sha256_min64_v1",
+
+        # 6G.1 completeness metrics.
+        # `null_ratio` remains pure SQL NULL ratio for backward compatibility
+        # with Relationship Intelligence. Completeness additionally treats
+        # blank text values as missing.
+        "quality_null_count":
+            null_count,
+        "quality_blank_count":
+            blank_count,
+        "quality_missing_count":
+            missing_count,
+        "quality_missing_ratio":
+            missing_ratio,
+        "quality_completeness_ratio":
+            completeness_ratio,
+        "quality_severity":
+            _completeness_severity(
+                missing_ratio
+            ),
     }
 
 
@@ -455,6 +593,7 @@ def run_profile_job(job_id: int):
         )
 
         profiles = []
+        quality_columns = []
 
         with engine.connect() as connection:
             if engine.dialect.name == "postgresql":
@@ -497,9 +636,56 @@ def run_profile_job(job_id: int):
                     column_name=column_name,
                     source_data_version=source_data_version,
                 )
-                profiles.append(
-                    upsert_column_profile(profile)
+
+                stored_profile = (
+                    upsert_column_profile(
+                        profile
+                    )
                 )
+                profiles.append(
+                    stored_profile
+                )
+
+                quality_columns.append(
+                    {
+                        "column_name":
+                            column_name,
+                        "is_system":
+                            column_name
+                            in SYSTEM_COLUMNS,
+                        "sample_row_count":
+                            sample_row_count,
+                        "null_count":
+                            profile[
+                                "quality_null_count"
+                            ],
+                        "blank_count":
+                            profile[
+                                "quality_blank_count"
+                            ],
+                        "missing_count":
+                            profile[
+                                "quality_missing_count"
+                            ],
+                        "missing_ratio":
+                            profile[
+                                "quality_missing_ratio"
+                            ],
+                        "completeness_ratio":
+                            profile[
+                                "quality_completeness_ratio"
+                            ],
+                        "severity":
+                            profile[
+                                "quality_severity"
+                            ],
+                        "profile_version":
+                            stored_profile[
+                                "profile_version"
+                            ],
+                    }
+                )
+
                 update_profile_job_progress(
                     job_id,
                     processed_columns=len(profiles),
@@ -519,6 +705,26 @@ def run_profile_job(job_id: int):
                 "table_changed_during_profile",
             )
 
+        quality_snapshot = (
+            register_completeness_snapshot(
+                table_name=table_name,
+                profiling_job_id=job_id,
+                source_data_version=
+                    source_data_version,
+                profile_mode=
+                    strategy["profile_mode"],
+                sample_row_count=
+                    (
+                        profiles[0][
+                            "sample_row_count"
+                        ]
+                        if profiles
+                        else 0
+                    ),
+                columns=quality_columns,
+            )
+        )
+
         summary = {
             "table_name": table_name,
             "profile_mode": strategy["profile_mode"],
@@ -535,6 +741,20 @@ def run_profile_job(job_id: int):
             "source_data_version": source_data_version,
             "current_data_version": current_data_version,
             "stale_on_completion": stale_on_completion,
+            "completeness_score":
+                quality_snapshot.get(
+                    "completeness_score"
+                ),
+            "affected_business_columns":
+                quality_snapshot.get(
+                    "affected_business_columns"
+                ),
+            "missing_business_values":
+                quality_snapshot.get(
+                    "missing_business_values"
+                ),
+            "quality_snapshot_id":
+                quality_snapshot.get("id"),
         }
 
         return update_profile_job_record(
@@ -612,16 +832,25 @@ def get_table_profile_snapshot(table_name: str):
             f"Tabel '{table_name}' tidak ditemukan."
         )
 
-    profiles = get_table_column_profiles(table_name)
+    profiles = get_table_column_profiles(
+        table_name
+    )
+    completeness = get_table_completeness(
+        table_name,
+        history_limit=12,
+    )
+
     return {
         "table_name": table_name,
         "profiled": bool(profiles),
         "profile_count": len(profiles),
         "stale_count": sum(
-            1 for profile in profiles
+            1
+            for profile in profiles
             if profile["is_stale"]
         ),
         "profiles": profiles,
+        "completeness": completeness,
     }
 
 

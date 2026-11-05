@@ -1,25 +1,64 @@
+"""
+Master data bank untuk Caffeine Theory.
+
+Catatan:
+- bank_id merupakan identifier internal Caffeine Theory.
+- bank_id pada file ini bukan sandi bank resmi OJK.
+- ID baru menggunakan rentang 7130001-7130010 agar tidak menimpa
+  identifier dummy lama yang mungkin sudah tersimpan pada warehouse.
+"""
+
 BANKS = [
-    {"bank_id": "7110001", "bank_name": "Bank Umum Arunika", "bank_type": "bank_umum"},
-    {"bank_id": "7120001", "bank_name": "BPR Bahari", "bank_type": "bpr"},
-    {"bank_id": "7120002", "bank_name": "BPR Cakrawala", "bank_type": "bpr"},
-    {"bank_id": "7120003", "bank_name": "BPR Danapati", "bank_type": "bpr"},
-    {"bank_id": "7120004", "bank_name": "BPR Ekantara", "bank_type": "bpr"},
-    {"bank_id": "7120005", "bank_name": "BPR Fajar Nusantara", "bank_type": "bpr"},
-    {"bank_id": "7120006", "bank_name": "BPR Garuda Sentosa", "bank_type": "bpr"},
-    {"bank_id": "7120007", "bank_name": "BPR Harmoni", "bank_type": "bpr"},
-    {"bank_id": "7120008", "bank_name": "BPR Indraprima", "bank_type": "bpr"},
-    {"bank_id": "7120009", "bank_name": "BPR Jaya Mandiri", "bank_type": "bpr"},
-    {"bank_id": "7120010", "bank_name": "BPR Kencana", "bank_type": "bpr"},
-    {"bank_id": "7120011", "bank_name": "BPR Lintas Dana", "bank_type": "bpr"},
-    {"bank_id": "7120012", "bank_name": "BPR Mahardika", "bank_type": "bpr"},
-    {"bank_id": "7120013", "bank_name": "BPR Nawasena", "bank_type": "bpr"},
-    {"bank_id": "7120014", "bank_name": "BPR Optima Nusantara", "bank_type": "bpr"},
-    {"bank_id": "7120015", "bank_name": "BPR Pusaka Dana", "bank_type": "bpr"},
-    {"bank_id": "7120016", "bank_name": "BPR Rajawali", "bank_type": "bpr"},
-    {"bank_id": "7120017", "bank_name": "BPR Samudra", "bank_type": "bpr"},
-    {"bank_id": "7120018", "bank_name": "BPR Tirta Kencana", "bank_type": "bpr"},
-    {"bank_id": "7120019", "bank_name": "BPR Utama Sejahtera", "bank_type": "bpr"},
-    {"bank_id": "7120020", "bank_name": "BPR Wijaya Dana", "bank_type": "bpr"},
+    {
+        "bank_id": "7130001",
+        "bank_name": "BPR MAL",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130002",
+        "bank_name": "BPR MM",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130003",
+        "bank_name": "BPR ME",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130004",
+        "bank_name": "BPR P",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130005",
+        "bank_name": "BPR CM",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130006",
+        "bank_name": "BPR SS",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130007",
+        "bank_name": "BPR B",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130008",
+        "bank_name": "BPR BS",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130009",
+        "bank_name": "BPR SB",
+        "bank_type": "bpr",
+    },
+    {
+        "bank_id": "7130010",
+        "bank_name": "BPR S",
+        "bank_type": "bpr",
+    },
 ]
 
 _BANKS_BY_NAME = {
@@ -29,10 +68,12 @@ _BANKS_BY_NAME = {
 
 
 def get_all_banks():
-    return BANKS.copy()
+    """Mengembalikan daftar 10 BPR aktif untuk dropdown aplikasi."""
+    return [item.copy() for item in BANKS]
 
 
 def get_bank_by_name(bank_name: str):
+    """Mengambil master bank berdasarkan nama, tanpa membedakan kapitalisasi."""
     key = str(bank_name or "").strip().casefold()
 
     if not key:

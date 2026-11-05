@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from io import BytesIO
 
 import pandas as pd
@@ -38,6 +39,23 @@ from master_data.banks import (
     get_all_banks,
     get_bank_by_name,
 )
+from services.bank_ops_service import (
+    get_bank_ops_overview,
+    save_bank_profile,
+)
+from services.ops_reconciliation_service import reconcile_warehouse_columns
+from services.ops_financial_service import (
+    get_source_catalog, list_financial_mappings, save_financial_mapping,
+    delete_financial_mapping, get_financial_performance, preview_financial_formula,
+)
+from services.manual_table_service import create_empty_warehouse_table
+from services.manual_column_service import add_manual_column
+from services.calculated_column_service import (
+    preview_calculated_column, create_calculated_column,
+    list_calculated_columns, refresh_calculated_column, refresh_stale_calculated_columns,
+)
+from services.smart_pivot_service import preview_pivot_excel
+from services.pivot_storage_service import store_pivot_excel, PivotPeriodExists
 from services.excel_processor import (
     get_excel_sheets,
     process_excel,
@@ -48,6 +66,13 @@ from services.profiling_service import (
     list_profile_jobs,
     queue_profile_job,
     recover_profile_queue,
+)
+from services.duplicate_quality_service import (
+    get_duplicate_job_status,
+    get_duplicate_overview,
+    list_duplicate_jobs,
+    queue_duplicate_job,
+    recover_duplicate_queue,
 )
 from services.relationship_scoring_service import (
     get_relationship_scoring_job_status,
@@ -73,7 +98,7 @@ from services.query_execution_service import (
 
 app = FastAPI(
     title="OJK Data Warehouse API",
-    version="1.13.0",
+    version="1.23.0",
 )
 
 
@@ -98,6 +123,18 @@ app.add_middleware(
 # =====================================================
 
 SYSTEM_COLUMNS = {"bank_id", "bulan", "tahun"}
+
+
+class BankOpsProfileRequest(BaseModel):
+    legal_name: str | None = Field(default=None, max_length=200)
+    address: str | None = Field(default=None, max_length=5000)
+    city: str | None = Field(default=None, max_length=120)
+    province: str | None = Field(default=None, max_length=120)
+    website: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=80)
+    status_pengawasan: str | None = Field(default=None, max_length=120)
+    status_date: date | None = None
 
 
 class RenameColumnRequest(BaseModel):
@@ -137,6 +174,34 @@ class ProfilingJobCreateRequest(BaseModel):
     columns: list[str] | None = None
     target_sample_rows: int = 50000
     profile_strategy: str = "adaptive"
+
+
+class OpsFinancialMappingRequest(BaseModel):
+    mode: str = "direct"
+    table_name: str | None = None
+    value_column: str | None = None
+    account_column: str | None = None
+    account_value: str | None = None
+    aggregation: str = "sum"
+    multiplier: float = 1
+    expression: str | None = None
+    components: list[dict] | None = None
+
+
+class OpsFormulaPreviewRequest(BaseModel):
+    bank_id: str
+    period: str
+    metric_key: str
+    expression: str
+    components: list[dict] = []
+
+
+class DuplicateDetectionJobCreateRequest(BaseModel):
+    table_name: str
+    mode: str = "exact_row"
+    key_columns: list[str] | None = None
+    include_incomplete_keys: bool = False
+    max_groups: int = Field(default=100, ge=10, le=250)
 
 
 class RelationshipCandidateJobCreateRequest(BaseModel):
@@ -363,13 +428,46 @@ def process_existing_excel(
         dtype=object,
     )
 
-    # Hanya buang row/column yang benar-benar kosong seluruhnya.
-    df = df.dropna(axis=0, how="all")
-    df = df.dropna(axis=1, how="all")
-    df = df.reset_index(drop=True)
+    # Existing-table uploads are positional: every expected column is part of
+    # the schema even when it has no values in this reporting period.
+    # Delete only genuinely empty rows. A numeric zero remains non-empty.
+    def is_empty_cell(value):
+        if value is None:
+            return True
+        try:
+            if bool(pd.isna(value)):
+                return True
+        except (ValueError, TypeError):
+            pass
+        return isinstance(value, str) and not value.strip()
+
+    df = df.loc[
+        ~df.apply(
+            lambda row: all(is_empty_cell(value) for value in row),
+            axis=1,
+        )
+    ].copy().reset_index(drop=True)
+
+    expected_column_count = len(expected_columns)
+    actual_column_count = len(df.columns)
+
+    # Pandas/Excel can truncate physically blank trailing columns. Restore
+    # those positions from the existing destination schema rather than
+    # shifting other columns left or rejecting a structurally valid period.
+    if actual_column_count < expected_column_count:
+        df = df.reindex(columns=range(expected_column_count))
+    elif actual_column_count > expected_column_count:
+        extra_columns = list(df.columns[expected_column_count:])
+        if all(df[column].map(is_empty_cell).all() for column in extra_columns):
+            df = df.iloc[:, :expected_column_count].copy()
+        else:
+            raise ValueError(
+                f"File memiliki {actual_column_count} kolom, tetapi tabel "
+                f"'{table_name}' membutuhkan {expected_column_count}. "
+                "Terdapat data pada kolom di luar schema existing."
+            )
 
     actual_column_count = len(df.columns)
-    expected_column_count = len(expected_columns)
 
     if actual_column_count != expected_column_count:
         raise ValueError(
@@ -457,6 +555,21 @@ def recover_warehouse_profiling_queue():
 
 
 @app.on_event("startup")
+def recover_duplicate_detection_queue():
+    try:
+        recovered = recover_duplicate_queue()
+        if recovered:
+            print(
+                f"Recovered {recovered} duplicate detection job(s)."
+            )
+    except Exception as error:
+        print(
+            "WARNING duplicate detection queue recovery:",
+            repr(error),
+        )
+
+
+@app.on_event("startup")
 def recover_relationship_intelligence_queue():
     try:
         recovered = recover_relationship_candidate_queue()
@@ -496,6 +609,122 @@ def root():
 # =====================================================
 # DATABASE TABLES
 # =====================================================
+
+class ManualColumnDefinition(BaseModel):
+    name: str = Field(min_length=1, max_length=63)
+    data_type: str
+    nullable: bool = True
+
+
+class CreateEmptyTableRequest(BaseModel):
+    table_name: str = Field(min_length=1, max_length=63)
+    include_period: bool = True
+    columns: list[ManualColumnDefinition] = Field(min_length=1, max_length=100)
+
+
+@app.post("/tables/manual", status_code=201)
+def create_empty_manual_table(payload: CreateEmptyTableRequest):
+    try:
+        return create_empty_warehouse_table(
+            payload.table_name,
+            [col.model_dump() for col in payload.columns],
+            payload.include_period,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR POST /tables/manual:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal membuat tabel manual.")
+
+
+class AddManualColumnRequest(BaseModel):
+    column_name: str = Field(min_length=1, max_length=63)
+    data_type: str
+    nullable: bool = True
+    default_value: str | None = Field(default=None, max_length=1000)
+
+
+@app.post("/tables/{table_name}/columns/manual", status_code=201)
+def create_manual_column(table_name: str, payload: AddManualColumnRequest):
+    try:
+        return add_manual_column(
+            table_name=table_name,
+            column_name=payload.column_name,
+            data_type=payload.data_type,
+            nullable=payload.nullable,
+            default_value=payload.default_value,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR POST /tables/{table_name}/columns/manual:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal menambahkan kolom manual.")
+
+
+class CalculatedColumnPreviewRequest(BaseModel):
+    formula: str = Field(min_length=1, max_length=600)
+
+
+class CalculatedColumnCreateRequest(CalculatedColumnPreviewRequest):
+    column_name: str = Field(min_length=1, max_length=63)
+
+
+@app.post("/tables/{table_name}/columns/calculated/preview")
+def preview_warehouse_calculation(table_name: str, payload: CalculatedColumnPreviewRequest):
+    try:
+        return preview_calculated_column(table_name=table_name, formula=payload.formula)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR calculated column preview:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal membuat preview formula.")
+
+
+@app.post("/tables/{table_name}/columns/calculated", status_code=201)
+def create_warehouse_calculation(table_name: str, payload: CalculatedColumnCreateRequest):
+    try:
+        return create_calculated_column(
+            table_name=table_name, column_name=payload.column_name, formula=payload.formula,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR calculated column create:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal membuat calculated column.")
+
+
+@app.post("/tables/{table_name}/columns/calculated/refresh-stale")
+def refresh_all_stale_warehouse_calculations(table_name: str):
+    try:
+        return refresh_stale_calculated_columns(table_name=table_name)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print('ERROR refresh stale calculated columns:', repr(error))
+        raise HTTPException(status_code=500, detail='Gagal menghitung ulang kolom yang stale.')
+
+
+@app.get("/tables/{table_name}/columns/calculated")
+def get_warehouse_calculations(table_name: str):
+    try:
+        return list_calculated_columns(table_name)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR calculated column list:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal membaca calculated column.")
+
+
+@app.post("/tables/{table_name}/columns/calculated/{column_name}/refresh")
+def refresh_warehouse_calculation(table_name: str, column_name: str):
+    try:
+        return refresh_calculated_column(table_name=table_name, column_name=column_name)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR calculated column refresh:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal menghitung ulang calculated column.")
+
 
 @app.get("/tables")
 def list_tables():
@@ -809,6 +1038,64 @@ def table_profile(table_name: str):
             detail=str(error),
         )
 
+
+
+# =====================================================
+# 6G.2 DATA QUALITY — DUPLICATE DETECTION
+# =====================================================
+
+@app.post("/data-quality/duplicates/jobs")
+def create_duplicate_detection_job(
+    payload: DuplicateDetectionJobCreateRequest,
+):
+    try:
+        result = queue_duplicate_job(
+            table_name=payload.table_name,
+            mode=payload.mode,
+            key_columns=payload.key_columns,
+            include_incomplete_keys=payload.include_incomplete_keys,
+            max_groups=payload.max_groups,
+        )
+        return {"status": "success", **result}
+    except Exception as error:
+        print("ERROR POST /data-quality/duplicates/jobs:", repr(error))
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/data-quality/duplicates/jobs")
+def duplicate_detection_jobs(
+    table_name: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    try:
+        rows = list_duplicate_jobs(table_name=table_name, limit=limit)
+        return {"status": "success", "count": len(rows), "jobs": rows}
+    except Exception as error:
+        print("ERROR GET /data-quality/duplicates/jobs:", repr(error))
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/data-quality/duplicates/jobs/{job_id}")
+def duplicate_detection_job(job_id: int):
+    try:
+        job = get_duplicate_job_status(job_id)
+        return {"status": "success", "job": job}
+    except Exception as error:
+        print("ERROR GET /data-quality/duplicates/jobs/{job_id}:", repr(error))
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/data-quality/duplicates/tables/{table_name}")
+def table_duplicate_detection(table_name: str):
+    try:
+        overview = get_duplicate_overview(table_name)
+        return {"status": "success", "duplicates": overview}
+    except Exception as error:
+        print(
+            "ERROR GET /data-quality/duplicates/tables/{table_name}:",
+            repr(error),
+        )
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 # =====================================================
@@ -1478,6 +1765,115 @@ def list_banks():
 
 
 # =====================================================
+# BANK INTELLIGENCE / OPS 7A.1
+# =====================================================
+
+@app.get("/banks/{bank_id}/ops")
+def bank_ops_overview(bank_id: str):
+    try:
+        return {
+            "status": "success",
+            **get_bank_ops_overview(bank_id),
+        }
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        print("ERROR GET /banks/{bank_id}/ops:", repr(error))
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal membaca OPS bank.",
+        ) from error
+
+
+@app.put("/banks/{bank_id}/profile")
+def update_bank_ops_profile(bank_id: str, payload: BankOpsProfileRequest):
+    try:
+        return {
+            "status": "success",
+            "profile": save_bank_profile(bank_id, payload.model_dump()),
+        }
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        print("ERROR PUT /banks/{bank_id}/profile:", repr(error))
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menyimpan profil bank.",
+        ) from error
+
+
+# =====================================================
+# OPS 7A.2: FINANCIAL SOURCE MAPPING
+# =====================================================
+
+@app.get("/ops/financial/sources")
+def ops_financial_sources():
+    return {"status": "success", "tables": get_source_catalog()}
+
+
+@app.get("/ops/financial/mappings")
+def ops_financial_mappings():
+    return {"status": "success", "metrics": list_financial_mappings()}
+
+
+@app.put("/ops/financial/mappings/{metric_key}")
+def ops_save_financial_mapping(metric_key: str, payload: OpsFinancialMappingRequest):
+    try:
+        return {"status": "success", "metric": save_financial_mapping(metric_key, payload.model_dump())}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/ops/financial/formulas/preview")
+def ops_preview_financial_formula(payload: OpsFormulaPreviewRequest):
+    try:
+        result = preview_financial_formula(
+            payload.bank_id, payload.period, payload.metric_key, payload.model_dump()
+        )
+        return {"status": "success", **result}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/ops/financial/mappings/{metric_key}")
+def ops_delete_financial_mapping(metric_key: str):
+    try:
+        return {"status": "success", **delete_financial_mapping(metric_key)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/banks/{bank_id}/ops/reconciliation")
+def ops_bank_reconciliation(
+    bank_id: str,
+    period: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    table_name: str = Query(...),
+    assets_column: str = Query(...),
+    liabilities_column: str = Query(...),
+    equity_column: str = Query(...),
+    derived_column: str | None = Query(None),
+):
+    try:
+        return reconcile_warehouse_columns(
+            bank_id, period, table_name, assets_column,
+            liabilities_column, equity_column, derived_column,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        print("ERROR OPS reconciliation:", repr(exc))
+        raise HTTPException(status_code=500, detail="Gagal membaca data rekonsiliasi.")
+
+
+@app.get("/banks/{bank_id}/ops/financial")
+def ops_bank_financial(bank_id: str, period: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    try:
+        return {"status": "success", **get_financial_performance(bank_id, period)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+# =====================================================
 # EXCEL SHEETS
 # =====================================================
 
@@ -1507,6 +1903,81 @@ async def detect_sheets(
             status_code=400,
             detail=str(error),
         )
+
+
+# =====================================================
+# 7A.2.2.1 SMART PIVOT PREVIEW (READ-ONLY)
+# =====================================================
+
+@app.post("/excel/pivot-preview")
+async def pivot_excel_preview(
+    file: UploadFile = File(...),
+    sheet_name: str = Form(...),
+    bank_name: str = Form(...),
+    month: int = Form(...),
+    year: int = Form(...),
+    code_column: int | None = Form(None),
+    value_column: int | None = Form(None),
+):
+    try:
+        bank = get_bank_by_name(bank_name)
+        file_bytes = await file.read()
+        result = preview_pivot_excel(
+            file_bytes=file_bytes,
+            sheet_name=sheet_name,
+            bank_id=bank["bank_id"],
+            bank_name=bank["bank_name"],
+            month=month,
+            year=year,
+            code_column=code_column,
+            value_column=value_column,
+        )
+        return result
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR POST /excel/pivot-preview:", repr(error))
+        raise HTTPException(
+            status_code=400,
+            detail="Gagal memproses Smart Pivot Preview.",
+        )
+
+
+# =====================================================
+# 7A.2.2.2 PIVOT WAREHOUSE STORAGE
+# =====================================================
+
+@app.post("/excel/pivot-save")
+async def pivot_excel_save(
+    file: UploadFile = File(...),
+    sheet_name: str = Form(...),
+    bank_name: str = Form(...),
+    month: int = Form(...),
+    year: int = Form(...),
+    table_name: str = Form(...),
+    table_mode: str = Form("new"),
+    duplicate_action: str = Form("block"),
+    code_column: int | None = Form(None),
+    value_column: int | None = Form(None),
+):
+    try:
+        bank = get_bank_by_name(bank_name)
+        data = await file.read()
+        return store_pivot_excel(
+            file_bytes=data, sheet_name=sheet_name,
+            bank_id=bank["bank_id"], bank_name=bank["bank_name"],
+            month=month, year=year, table_name=table_name,
+            action=duplicate_action, table_mode=table_mode,
+            filename=file.filename,
+            code_column=code_column, value_column=value_column,
+        )
+    except PivotPeriodExists as error:
+        raise HTTPException(status_code=409, detail=error.detail)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:
+        print("ERROR /excel/pivot-save:", repr(error))
+        raise HTTPException(status_code=500, detail="Gagal menyimpan Pivot Warehouse.")
 
 
 # =====================================================

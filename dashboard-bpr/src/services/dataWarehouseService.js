@@ -47,6 +47,76 @@ export async function detectExcelSheets(file) {
   );
 }
 
+export async function savePivotExcel({
+  file, sheetName, bankName, month, year, tableName, tableMode,
+  codeColumn = null, valueColumn = null, duplicateAction = 'block',
+}) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('sheet_name', sheetName);
+  formData.append('bank_name', bankName);
+  formData.append('month', String(month));
+  formData.append('year', String(year));
+  formData.append('table_name', tableName);
+  formData.append('table_mode', tableMode);
+  formData.append('duplicate_action', duplicateAction);
+  if (codeColumn !== null && valueColumn !== null) {
+    formData.append('code_column', String(codeColumn));
+    formData.append('value_column', String(valueColumn));
+  }
+
+  let response;
+  try {
+    response = await fetch(`${API_URL}/excel/pivot-save`, {
+      method: 'POST', body: formData,
+    });
+  } catch {
+    throw new Error(`Tidak dapat menghubungi backend di ${API_URL}.`);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.detail;
+    const error = new Error(
+      typeof detail === 'string'
+        ? detail
+        : detail?.message || `Pivot Save gagal (HTTP ${response.status}).`,
+    );
+    error.code = detail?.code;
+    error.status = response.status;
+    error.detail = detail;
+    throw error;
+  }
+  return response.json();
+}
+
+export async function previewPivotExcel({
+  file,
+  sheetName,
+  bankName,
+  month,
+  year,
+  codeColumn = null,
+  valueColumn = null,
+}) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("sheet_name", sheetName);
+  formData.append("bank_name", bankName);
+  formData.append("month", String(month));
+  formData.append("year", String(year));
+
+  if (codeColumn !== null && valueColumn !== null) {
+    formData.append("code_column", String(codeColumn));
+    formData.append("value_column", String(valueColumn));
+  }
+
+  return requestJson(
+    `${API_URL}/excel/pivot-preview`,
+    { method: "POST", body: formData },
+    "Gagal membuat Smart Pivot Preview"
+  );
+}
+
 export async function previewExcel({
   file,
   tableMode,
@@ -92,6 +162,72 @@ export async function getBanks() {
       method: "GET",
     },
     "Gagal mengambil master bank"
+  );
+}
+
+export async function previewCalculatedColumn(tableName, formula) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/calculated/preview`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formula }) },
+    'Gagal membuat preview formula',
+  );
+}
+
+export async function createCalculatedColumn(tableName, payload) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/calculated`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload) },
+    'Gagal membuat calculated column',
+  );
+}
+
+export async function getCalculatedColumns(tableName) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/calculated`,
+    { method: 'GET' },
+    'Gagal membaca calculated columns',
+  );
+}
+
+export async function refreshStaleCalculatedColumns(tableName) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/calculated/refresh-stale`,
+    { method: 'POST' },
+    'Gagal menghitung ulang calculated columns yang stale',
+  );
+}
+
+export async function refreshCalculatedColumn(tableName, columnName) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/calculated/${encodeURIComponent(columnName)}/refresh`,
+    { method: 'POST' },
+    'Gagal menghitung ulang calculated column',
+  );
+}
+
+export async function addManualColumn(tableName, payload) {
+  return requestJson(
+    `${API_URL}/tables/${encodeURIComponent(tableName)}/columns/manual`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Gagal menambahkan kolom',
+  );
+}
+
+export async function createEmptyTable(payload) {
+  return requestJson(
+    `${API_URL}/tables/manual`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Gagal membuat tabel manual',
   );
 }
 
@@ -193,6 +329,98 @@ export async function getTableDetail(tableName) {
     "Gagal membaca detail tabel"
   );
 }
+
+export async function getTableProfile(tableName) {
+  return requestJson(
+    `${API_URL}/profiling/tables/${encodeURIComponent(tableName)}`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca completeness profile"
+  );
+}
+
+export async function createProfilingJob({
+  tableName,
+  columns = null,
+  targetSampleRows = 50000,
+  profileStrategy = "adaptive",
+}) {
+  return requestJson(
+    `${API_URL}/profiling/jobs`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        table_name: tableName,
+        columns,
+        target_sample_rows: targetSampleRows,
+        profile_strategy: profileStrategy,
+      }),
+    },
+    "Gagal menjalankan completeness profile"
+  );
+}
+
+export async function getProfilingJob(jobId) {
+  return requestJson(
+    `${API_URL}/profiling/jobs/${encodeURIComponent(jobId)}`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca status profiling"
+  );
+}
+
+
+export async function getDuplicateOverview(tableName) {
+  return requestJson(
+    `${API_URL}/data-quality/duplicates/tables/${encodeURIComponent(tableName)}`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca duplicate detection"
+  );
+}
+
+export async function createDuplicateJob({
+  tableName,
+  mode = "exact_row",
+  keyColumns = null,
+  includeIncompleteKeys = false,
+  maxGroups = 100,
+}) {
+  return requestJson(
+    `${API_URL}/data-quality/duplicates/jobs`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        table_name: tableName,
+        mode,
+        key_columns: keyColumns,
+        include_incomplete_keys: includeIncompleteKeys,
+        max_groups: maxGroups,
+      }),
+    },
+    "Gagal menjalankan duplicate detection"
+  );
+}
+
+export async function getDuplicateJob(jobId) {
+  return requestJson(
+    `${API_URL}/data-quality/duplicates/jobs/${encodeURIComponent(jobId)}`,
+    {
+      method: "GET",
+    },
+    "Gagal membaca status duplicate detection"
+  );
+}
+
 
 export async function getTableLineage(tableName) {
   return requestJson(
@@ -481,5 +709,73 @@ export async function createOutputTable(payload) {
       body: JSON.stringify(payload),
     },
     "Gagal membuat output table"
+  );
+}
+
+
+// 7A.1 — Bank Intelligence / One Page Summary
+export async function getBankOpsOverview(bankId) {
+  return requestJson(
+    `${API_URL}/banks/${encodeURIComponent(bankId)}/ops`,
+    { method: "GET" },
+    "Gagal membaca One Page Summary bank"
+  );
+}
+
+export async function saveBankOpsProfile(bankId, profile) {
+  return requestJson(
+    `${API_URL}/banks/${encodeURIComponent(bankId)}/profile`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    },
+    "Gagal menyimpan profil bank"
+  );
+}
+
+
+// 7A.2 — OPS Financial Mapping (explicit source, no guessed account codes)
+export async function getOpsFinancialSources() {
+  return requestJson(`${API_URL}/ops/financial/sources`, { method: 'GET' }, 'Gagal membaca tabel sumber OPS');
+}
+export async function getOpsFinancialMappings() {
+  return requestJson(`${API_URL}/ops/financial/mappings`, { method: 'GET' }, 'Gagal membaca mapping OPS');
+}
+export async function saveOpsFinancialMapping(metricKey, payload) {
+  return requestJson(`${API_URL}/ops/financial/mappings/${encodeURIComponent(metricKey)}`,
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+    'Gagal menyimpan mapping OPS');
+}
+export async function deleteOpsFinancialMapping(metricKey) {
+  return requestJson(`${API_URL}/ops/financial/mappings/${encodeURIComponent(metricKey)}`,
+    { method: 'DELETE' }, 'Gagal menghapus mapping OPS');
+}
+export async function getBankOpsFinancial(bankId, period) {
+  return requestJson(`${API_URL}/banks/${encodeURIComponent(bankId)}/ops/financial?period=${encodeURIComponent(period)}`,
+    { method: 'GET' }, 'Gagal membaca kinerja keuangan OPS');
+}
+
+
+export async function previewOpsFinancialFormula(payload) {
+  return requestJson(`${API_URL}/ops/financial/formulas/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, 'Gagal menghitung preview formula OPS');
+}
+
+// 7A.2.2.7 — Read-only OPS reconciliation from explicitly selected columns.
+export async function getOpsReconciliation(bankId, period, selection) {
+  const params = new URLSearchParams({
+    period, table_name: selection.tableName,
+    assets_column: selection.assetsColumn,
+    liabilities_column: selection.liabilitiesColumn,
+    equity_column: selection.equityColumn,
+  });
+  if (selection.derivedColumn) params.set('derived_column', selection.derivedColumn);
+  return requestJson(
+    `${API_URL}/banks/${encodeURIComponent(bankId)}/ops/reconciliation?${params.toString()}`,
+    { method: 'GET' }, 'Gagal merekonsiliasi data OPS'
   );
 }

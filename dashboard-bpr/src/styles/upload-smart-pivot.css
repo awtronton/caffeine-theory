@@ -1,0 +1,230 @@
+
+/* 7A.2.2.1 — Smart Pivot Preview; scoped to Upload Data. */
+.tp-smart-pivot-mode,
+.tp-smart-pivot-panel {
+  border: 1px solid #dfe4ec;
+  border-radius: 10px;
+  background: #fff;
+  color: #3f434b;
+  overflow: hidden;
+}
+.tp-smart-pivot-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 18px;
+}
+.tp-smart-pivot-mode h2,
+.tp-smart-pivot-header h2 {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+.tp-smart-pivot-mode p,
+.tp-smart-pivot-header p {
+  max-width: 740px;
+  margin: 5px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #8b909a;
+}
+.tp-smart-pivot-eyebrow {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #9297a2;
+}
+.tp-smart-pivot-mode-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid #e0e4eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.tp-smart-pivot-mode-actions button {
+  border-radius: 5px;
+  padding: 8px 11px;
+  font-size: 10px;
+  color: #737a88;
+  background: transparent;
+  cursor: pointer;
+}
+.tp-smart-pivot-mode-actions button.is-active {
+  background: #fff;
+  color: #0073ea;
+  font-weight: 650;
+  box-shadow: 0 1px 4px #0f172a12;
+}
+.tp-smart-pivot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px;
+  border-bottom: 1px solid #eceff4;
+}
+.tp-smart-pivot-action {
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: #0073ea;
+  color: #fff;
+  padding: 9px 12px;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.tp-smart-pivot-action:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+.tp-smart-pivot-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 13px;
+  padding: 13px 16px;
+}
+.tp-smart-pivot-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #626876;
+  font-size: 10px;
+  font-weight: 550;
+  min-width: 160px;
+}
+.tp-smart-pivot-controls select {
+  border: 1px solid #d3d9e3;
+  border-radius: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  color: #515967;
+  background: #fff;
+  font-size: 10px;
+}
+.tp-smart-pivot-controls p {
+  color: #969ba4;
+  font-size: 9px;
+  line-height: 1.55;
+  max-width: 470px;
+}
+.tp-smart-pivot-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0,1fr));
+  border-block: 1px solid #eceff4;
+  background: #fafbfd;
+}
+.tp-smart-pivot-summary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid #eceff4;
+}
+.tp-smart-pivot-summary > div:last-child { border-right: 0; }
+.tp-smart-pivot-summary span {
+  display: block;
+  color: #969ca7;
+  font-size: 9px;
+}
+.tp-smart-pivot-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tp-smart-pivot-status {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 10px;
+}
+.tp-smart-pivot-status.is-valid {
+  background: #ecf9f2;
+  color: #167b54;
+}
+.tp-smart-pivot-status.is-invalid,
+.tp-smart-pivot-error {
+  background: #fff5f0;
+  color: #ad5040;
+}
+.tp-smart-pivot-error { padding: 10px 16px; font-size: 10px; }
+.tp-smart-pivot-issues {
+  padding: 12px 16px;
+  color: #ad5040;
+  font-size: 10px;
+  max-height: 155px;
+  overflow: auto;
+}
+.tp-smart-pivot-issues strong { display: block; margin-bottom: 6px; }
+.tp-smart-pivot-issues div { padding: 3px 0; }
+.tp-smart-pivot-result-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  font-size: 10px;
+}
+.tp-smart-pivot-result-heading span { color: #9196a1; }
+.tp-smart-pivot-table-scroll {
+  max-height: 350px;
+  overflow: auto;
+}
+.tp-smart-pivot-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+.tp-smart-pivot-table-scroll th,
+.tp-smart-pivot-table-scroll td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #edf0f4;
+  text-align: left;
+  white-space: nowrap;
+}
+.tp-smart-pivot-table-scroll th {
+  position: sticky;
+  top: 0;
+  background: #f5f7fa;
+  color: #777d89;
+  font-weight: 600;
+}
+.tp-smart-pivot-table-scroll td { color: #555b66; }
+.tp-smart-pivot-table-scroll code,
+.tp-smart-pivot-foot code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tp-smart-pivot-table-scroll .tp-smart-pivot-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tp-smart-pivot-foot {
+  padding: 10px 16px;
+  color: #9096a1;
+  font-size: 9px;
+  line-height: 1.6;
+}
+@media (max-width: 850px) {
+  .tp-smart-pivot-mode,
+  .tp-smart-pivot-header { flex-direction: column; align-items: stretch; }
+  .tp-smart-pivot-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
+.tp-smart-pivot-wide { border-bottom: 1px solid #e9edf2; }
+.tp-smart-pivot-wide .tp-smart-pivot-table-scroll { max-height: 150px; }
+.tp-smart-pivot-wide table { width: max-content; min-width: 100%; }
+.tp-smart-pivot-wide td { color: #364152; font-variant-numeric: tabular-nums; }
+
+.tp-smart-pivot-savebar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px; padding: 12px 16px;
+  border-top: 1px solid #edf0f4;
+}
+.tp-smart-pivot-savebar strong { font-size: 11px; color: #555c68; }
+.tp-smart-pivot-savebar p { margin-top: 5px; color: #8c939e; font-size: 10px; }
+.tp-smart-pivot-savebar code { font-family: ui-monospace,monospace; }
+.tp-smart-pivot-success { padding: 11px 16px; font-size: 10px; color: #167b54; background: #eaf9f0; }

@@ -58,8 +58,27 @@ RELATIONSHIP_REVIEWS_TABLE_NAME = (
 
 SAVED_QUERIES_TABLE_NAME = "warehouse_saved_queries"
 OUTPUT_LINEAGE_TABLE_NAME = "warehouse_output_lineage"
+DATA_QUALITY_SNAPSHOTS_TABLE_NAME = "warehouse_data_quality_snapshots"
+DATA_QUALITY_COLUMNS_TABLE_NAME = "warehouse_data_quality_columns"
+DUPLICATE_JOBS_TABLE_NAME = "warehouse_duplicate_detection_jobs"
+DUPLICATE_SNAPSHOTS_TABLE_NAME = "warehouse_duplicate_snapshots"
+DUPLICATE_GROUPS_TABLE_NAME = "warehouse_duplicate_groups"
+BANK_PROFILES_TABLE_NAME = "warehouse_bank_profiles"
+OPS_FINANCIAL_MAPPINGS_TABLE_NAME = "warehouse_ops_financial_mappings"
+OPS_FINANCIAL_FORMULAS_TABLE_NAME = "warehouse_ops_financial_formulas"
+PIVOT_TABLES_TABLE_NAME = "warehouse_pivot_tables"
+PIVOT_COLUMNS_TABLE_NAME = "warehouse_pivot_columns"
+PIVOT_UPLOAD_LOG_TABLE_NAME = "warehouse_pivot_upload_log"
+CALCULATED_COLUMNS_TABLE_NAME = "warehouse_calculated_columns"
+CALCULATED_COLUMN_STATE_TABLE_NAME = "warehouse_calculated_column_state"
 MASK_VALUE = "••••••••"
 PROFILE_JOB_STATUSES = {
+    "queued",
+    "running",
+    "completed",
+    "failed",
+}
+DUPLICATE_JOB_STATUSES = {
     "queued",
     "running",
     "completed",
@@ -120,6 +139,23 @@ INTERNAL_TABLES = {
     # Visual SQL Builder metadata
     SAVED_QUERIES_TABLE_NAME,
     OUTPUT_LINEAGE_TABLE_NAME,
+
+    # Data Quality Intelligence metadata
+    DATA_QUALITY_SNAPSHOTS_TABLE_NAME,
+    DATA_QUALITY_COLUMNS_TABLE_NAME,
+    DUPLICATE_JOBS_TABLE_NAME,
+    DUPLICATE_SNAPSHOTS_TABLE_NAME,
+    DUPLICATE_GROUPS_TABLE_NAME,
+
+    # Bank Intelligence / OPS metadata
+    BANK_PROFILES_TABLE_NAME,
+    OPS_FINANCIAL_MAPPINGS_TABLE_NAME,
+    OPS_FINANCIAL_FORMULAS_TABLE_NAME,
+    PIVOT_TABLES_TABLE_NAME,
+    PIVOT_COLUMNS_TABLE_NAME,
+    PIVOT_UPLOAD_LOG_TABLE_NAME,
+    CALCULATED_COLUMNS_TABLE_NAME,
+    CALCULATED_COLUMN_STATE_TABLE_NAME,
 }
 
 
@@ -147,6 +183,40 @@ schema_mapping_table = Table(
         "source_ordinal",
         name="uq_schema_mapping_table_ordinal",
     ),
+)
+
+# 7A.2.2.2: persisted pivot registry and source trace.
+pivot_tables_table = Table(
+    PIVOT_TABLES_TABLE_NAME, metadata,
+    Column("table_name", String(63), primary_key=True),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+)
+pivot_columns_table = Table(
+    PIVOT_COLUMNS_TABLE_NAME, metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("table_name", String(63), nullable=False),
+    Column("column_name", String(63), nullable=False),
+    Column("account_code", String(18), nullable=False),
+    Column("description", String(255), nullable=True),
+    Column("source_sheet", String(255), nullable=True),
+    Column("source_row", Integer, nullable=True),
+    Column("updated_at", DateTime, nullable=False, server_default=func.now()),
+    UniqueConstraint("table_name", "column_name", name="uq_pivot_column"),
+)
+pivot_upload_log_table = Table(
+    PIVOT_UPLOAD_LOG_TABLE_NAME, metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("table_name", String(63), nullable=False),
+    Column("bank_id", String(64), nullable=False),
+    Column("bulan", Integer, nullable=False),
+    Column("tahun", Integer, nullable=False),
+    Column("filename", String(255), nullable=True),
+    Column("sheet_name", String(255), nullable=False),
+    Column("file_sha256", String(64), nullable=False),
+    Column("action", String(16), nullable=False),
+    Column("account_count", Integer, nullable=False),
+    Column("previous_rows", Integer, nullable=False),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
 )
 
 column_settings_table = Table(
@@ -567,6 +637,143 @@ output_lineage_table = Table(
 )
 
 
+data_quality_snapshots_table = Table(
+    DATA_QUALITY_SNAPSHOTS_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("table_name", String(63), nullable=False),
+    Column("profiling_job_id", Integer, nullable=False, unique=True),
+    Column("source_data_version", BigInteger, nullable=False),
+    Column("profile_mode", String(32), nullable=False),
+    Column("sample_row_count", BigInteger, nullable=False, default=0),
+    Column("business_column_count", Integer, nullable=False, default=0),
+    Column("system_column_count", Integer, nullable=False, default=0),
+    Column("affected_business_columns", Integer, nullable=False, default=0),
+    Column("missing_business_values", BigInteger, nullable=False, default=0),
+    Column("sample_business_cells", BigInteger, nullable=False, default=0),
+    Column("completeness_ratio", Float, nullable=True),
+    Column("severity", String(24), nullable=False, default="unknown"),
+    Column(
+        "created_at",
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    ),
+)
+
+
+data_quality_columns_table = Table(
+    DATA_QUALITY_COLUMNS_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("snapshot_id", Integer, nullable=False),
+    Column("column_name", String(63), nullable=False),
+    Column("is_system", Boolean, nullable=False, default=False),
+    Column("sample_row_count", BigInteger, nullable=False, default=0),
+    Column("null_count", BigInteger, nullable=False, default=0),
+    Column("blank_count", BigInteger, nullable=False, default=0),
+    Column("missing_count", BigInteger, nullable=False, default=0),
+    Column("missing_ratio", Float, nullable=True),
+    Column("completeness_ratio", Float, nullable=True),
+    Column("severity", String(24), nullable=False, default="unknown"),
+    Column("profile_version", Integer, nullable=True),
+    UniqueConstraint(
+        "snapshot_id",
+        "column_name",
+        name="uq_data_quality_snapshot_column",
+    ),
+)
+
+
+Index(
+    "ix_data_quality_snapshots_table_created",
+    data_quality_snapshots_table.c.table_name,
+    data_quality_snapshots_table.c.id,
+)
+
+Index(
+    "ix_data_quality_columns_snapshot",
+    data_quality_columns_table.c.snapshot_id,
+    data_quality_columns_table.c.missing_ratio,
+)
+
+
+duplicate_jobs_table = Table(
+    DUPLICATE_JOBS_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("table_name", String(63), nullable=False),
+    Column("mode", String(24), nullable=False),
+    Column("key_columns", JSON, nullable=True),
+    Column("include_incomplete_keys", Boolean, nullable=False, default=False),
+    Column("max_groups", Integer, nullable=False, default=100),
+    Column("source_data_version", BigInteger, nullable=True),
+    Column("status", String(24), nullable=False, default="queued"),
+    Column("worker_backend", String(32), nullable=False, default="in_process_v1"),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+    Column("started_at", DateTime, nullable=True),
+    Column("finished_at", DateTime, nullable=True),
+    Column("error_message", Text, nullable=True),
+    Column("result_summary", JSON, nullable=True),
+)
+
+
+duplicate_snapshots_table = Table(
+    DUPLICATE_SNAPSHOTS_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("table_name", String(63), nullable=False),
+    Column("job_id", Integer, nullable=False, unique=True),
+    Column("mode", String(24), nullable=False),
+    Column("key_columns", JSON, nullable=True),
+    Column("include_incomplete_keys", Boolean, nullable=False, default=False),
+    Column("source_data_version", BigInteger, nullable=False),
+    Column("row_count", BigInteger, nullable=False, default=0),
+    Column("eligible_row_count", BigInteger, nullable=False, default=0),
+    Column("ignored_incomplete_rows", BigInteger, nullable=False, default=0),
+    Column("duplicate_group_count", BigInteger, nullable=False, default=0),
+    Column("duplicate_row_count", BigInteger, nullable=False, default=0),
+    Column("redundant_row_count", BigInteger, nullable=False, default=0),
+    Column("duplicate_rate", Float, nullable=True),
+    Column("affected_rate", Float, nullable=True),
+    Column("uniqueness_ratio", Float, nullable=True),
+    Column("severity", String(24), nullable=False, default="unknown"),
+    Column("created_at", DateTime, nullable=False, server_default=func.now()),
+)
+
+
+duplicate_groups_table = Table(
+    DUPLICATE_GROUPS_TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("snapshot_id", Integer, nullable=False),
+    Column("rank", Integer, nullable=False),
+    Column("group_hash", String(64), nullable=False),
+    Column("preview", JSON, nullable=True),
+    Column("row_count", BigInteger, nullable=False, default=0),
+    Column("redundant_row_count", BigInteger, nullable=False, default=0),
+    UniqueConstraint("snapshot_id", "rank", name="uq_duplicate_snapshot_rank"),
+)
+
+
+Index(
+    "ix_duplicate_jobs_table_status",
+    duplicate_jobs_table.c.table_name,
+    duplicate_jobs_table.c.status,
+)
+
+Index(
+    "ix_duplicate_snapshots_table_created",
+    duplicate_snapshots_table.c.table_name,
+    duplicate_snapshots_table.c.id,
+)
+
+Index(
+    "ix_duplicate_groups_snapshot",
+    duplicate_groups_table.c.snapshot_id,
+    duplicate_groups_table.c.rank,
+)
+
 
 def ensure_internal_tables():
     metadata.create_all(
@@ -585,6 +792,14 @@ def ensure_internal_tables():
             relationship_scoring_jobs_table,
             saved_queries_table,
             output_lineage_table,
+            data_quality_snapshots_table,
+            data_quality_columns_table,
+            duplicate_jobs_table,
+            duplicate_snapshots_table,
+            duplicate_groups_table,
+            pivot_tables_table,
+            pivot_columns_table,
+            pivot_upload_log_table,
         ],
     )
     _backfill_relationship_columns()
@@ -1704,6 +1919,625 @@ def get_table_column_profiles(table_name: str):
     return [_serialize_profile_row(row) for row in rows]
 
 
+def _quality_ratio(value):
+    if value is None:
+        return None
+
+    return round(
+        max(0.0, min(1.0, float(value))),
+        8,
+    )
+
+
+def _quality_pct(value):
+    if value is None:
+        return None
+
+    return round(
+        float(value) * 100.0,
+        2,
+    )
+
+
+def _quality_severity_from_missing_ratio(
+    missing_ratio,
+):
+    if missing_ratio is None:
+        return "unknown"
+
+    value = max(
+        0.0,
+        min(1.0, float(missing_ratio)),
+    )
+
+    if value == 0:
+        return "clean"
+    if value <= 0.01:
+        return "low"
+    if value <= 0.05:
+        return "medium"
+    if value <= 0.15:
+        return "high"
+
+    return "critical"
+
+
+def _serialize_quality_snapshot_row(row):
+    completeness_ratio = _quality_ratio(
+        row["completeness_ratio"]
+    )
+
+    return {
+        "id": int(row["id"]),
+        "table_name": row["table_name"],
+        "profiling_job_id":
+            int(row["profiling_job_id"]),
+        "source_data_version":
+            int(row["source_data_version"]),
+        "profile_mode":
+            row["profile_mode"],
+        "sample_row_count":
+            int(row["sample_row_count"] or 0),
+        "business_column_count":
+            int(row["business_column_count"] or 0),
+        "system_column_count":
+            int(row["system_column_count"] or 0),
+        "affected_business_columns":
+            int(
+                row["affected_business_columns"]
+                or 0
+            ),
+        "missing_business_values":
+            int(
+                row["missing_business_values"]
+                or 0
+            ),
+        "sample_business_cells":
+            int(
+                row["sample_business_cells"]
+                or 0
+            ),
+        "completeness_ratio":
+            completeness_ratio,
+        "completeness_score":
+            _quality_pct(
+                completeness_ratio
+            ),
+        "severity":
+            row["severity"],
+        "created_at":
+            row["created_at"],
+    }
+
+
+def _serialize_quality_column_row(row):
+    missing_ratio = _quality_ratio(
+        row["missing_ratio"]
+    )
+    completeness_ratio = _quality_ratio(
+        row["completeness_ratio"]
+    )
+
+    return {
+        "id": int(row["id"]),
+        "snapshot_id":
+            int(row["snapshot_id"]),
+        "column_name":
+            row["column_name"],
+        "is_system":
+            bool(row["is_system"]),
+        "sample_row_count":
+            int(row["sample_row_count"] or 0),
+        "null_count":
+            int(row["null_count"] or 0),
+        "blank_count":
+            int(row["blank_count"] or 0),
+        "missing_count":
+            int(row["missing_count"] or 0),
+        "missing_ratio":
+            missing_ratio,
+        "missing_pct":
+            _quality_pct(
+                missing_ratio
+            ),
+        "completeness_ratio":
+            completeness_ratio,
+        "completeness_score":
+            _quality_pct(
+                completeness_ratio
+            ),
+        "severity":
+            row["severity"],
+        "profile_version":
+            (
+                int(row["profile_version"])
+                if row["profile_version"]
+                is not None
+                else None
+            ),
+    }
+
+
+def register_completeness_snapshot(
+    *,
+    table_name: str,
+    profiling_job_id: int,
+    source_data_version: int,
+    profile_mode: str,
+    sample_row_count: int,
+    columns: list[dict],
+):
+    table_name = validate_table_name(
+        table_name
+    )
+    ensure_internal_tables()
+
+    profiling_job_id = int(
+        profiling_job_id
+    )
+    source_data_version = int(
+        source_data_version
+    )
+    sample_row_count = max(
+        0,
+        int(sample_row_count or 0),
+    )
+    profile_mode = str(
+        profile_mode or "adaptive"
+    ).strip()[:32]
+
+    normalized_columns = []
+
+    for raw in columns or []:
+        column_name = validate_column_name(
+            raw["column_name"]
+        )
+        is_system = bool(
+            raw.get("is_system")
+        )
+        row_count = max(
+            0,
+            int(
+                raw.get(
+                    "sample_row_count"
+                )
+                or sample_row_count
+                or 0
+            ),
+        )
+        null_count = max(
+            0,
+            int(
+                raw.get("null_count")
+                or 0
+            ),
+        )
+        blank_count = max(
+            0,
+            int(
+                raw.get("blank_count")
+                or 0
+            ),
+        )
+        missing_count = max(
+            0,
+            int(
+                raw.get(
+                    "missing_count"
+                )
+                or (
+                    null_count
+                    + blank_count
+                )
+            ),
+        )
+
+        missing_count = min(
+            missing_count,
+            row_count,
+        )
+
+        missing_ratio = (
+            float(missing_count)
+            / float(row_count)
+            if row_count > 0
+            else None
+        )
+        completeness_ratio = (
+            1.0 - missing_ratio
+            if missing_ratio is not None
+            else None
+        )
+
+        normalized_columns.append(
+            {
+                "column_name":
+                    column_name,
+                "is_system":
+                    is_system,
+                "sample_row_count":
+                    row_count,
+                "null_count":
+                    null_count,
+                "blank_count":
+                    blank_count,
+                "missing_count":
+                    missing_count,
+                "missing_ratio":
+                    _quality_ratio(
+                        missing_ratio
+                    ),
+                "completeness_ratio":
+                    _quality_ratio(
+                        completeness_ratio
+                    ),
+                "severity":
+                    str(
+                        raw.get(
+                            "severity"
+                        )
+                        or _quality_severity_from_missing_ratio(
+                            missing_ratio
+                        )
+                    )[:24],
+                "profile_version":
+                    (
+                        int(
+                            raw[
+                                "profile_version"
+                            ]
+                        )
+                        if raw.get(
+                            "profile_version"
+                        )
+                        is not None
+                        else None
+                    ),
+            }
+        )
+
+    business_columns = [
+        item
+        for item in normalized_columns
+        if not item["is_system"]
+    ]
+    system_columns = [
+        item
+        for item in normalized_columns
+        if item["is_system"]
+    ]
+
+    sample_business_cells = sum(
+        item["sample_row_count"]
+        for item in business_columns
+    )
+    missing_business_values = sum(
+        item["missing_count"]
+        for item in business_columns
+    )
+    affected_business_columns = sum(
+        1
+        for item in business_columns
+        if item["missing_count"] > 0
+    )
+
+    completeness_ratio = (
+        1.0
+        - (
+            float(
+                missing_business_values
+            )
+            / float(
+                sample_business_cells
+            )
+        )
+        if sample_business_cells > 0
+        else None
+    )
+    missing_ratio = (
+        1.0 - completeness_ratio
+        if completeness_ratio is not None
+        else None
+    )
+
+    with engine.begin() as connection:
+        existing = connection.execute(
+            select(
+                data_quality_snapshots_table
+            ).where(
+                data_quality_snapshots_table
+                .c.profiling_job_id
+                == profiling_job_id
+            )
+        ).mappings().one_or_none()
+
+        if existing is not None:
+            snapshot_id = int(
+                existing["id"]
+            )
+        else:
+            result = connection.execute(
+                data_quality_snapshots_table
+                .insert()
+                .values(
+                    table_name=table_name,
+                    profiling_job_id=
+                        profiling_job_id,
+                    source_data_version=
+                        source_data_version,
+                    profile_mode=
+                        profile_mode,
+                    sample_row_count=
+                        sample_row_count,
+                    business_column_count=
+                        len(business_columns),
+                    system_column_count=
+                        len(system_columns),
+                    affected_business_columns=
+                        affected_business_columns,
+                    missing_business_values=
+                        missing_business_values,
+                    sample_business_cells=
+                        sample_business_cells,
+                    completeness_ratio=
+                        _quality_ratio(
+                            completeness_ratio
+                        ),
+                    severity=
+                        _quality_severity_from_missing_ratio(
+                            missing_ratio
+                        ),
+                )
+            )
+            snapshot_id = int(
+                result.inserted_primary_key[
+                    0
+                ]
+            )
+
+            if normalized_columns:
+                connection.execute(
+                    data_quality_columns_table
+                    .insert(),
+                    [
+                        {
+                            "snapshot_id":
+                                snapshot_id,
+                            **item,
+                        }
+                        for item
+                        in normalized_columns
+                    ],
+                )
+
+    return get_completeness_snapshot(
+        snapshot_id
+    )
+
+
+def get_completeness_snapshot(
+    snapshot_id: int,
+):
+    ensure_internal_tables()
+    snapshot_id = int(snapshot_id)
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(
+                data_quality_snapshots_table
+            ).where(
+                data_quality_snapshots_table
+                .c.id
+                == snapshot_id
+            )
+        ).mappings().one_or_none()
+
+        if row is None:
+            raise ValueError(
+                "Completeness snapshot "
+                "tidak ditemukan."
+            )
+
+        column_rows = connection.execute(
+            select(
+                data_quality_columns_table
+            ).where(
+                data_quality_columns_table
+                .c.snapshot_id
+                == snapshot_id
+            ).order_by(
+                data_quality_columns_table
+                .c.is_system.asc(),
+                data_quality_columns_table
+                .c.missing_ratio.desc(),
+                data_quality_columns_table
+                .c.column_name.asc(),
+            )
+        ).mappings().all()
+
+    snapshot = (
+        _serialize_quality_snapshot_row(
+            row
+        )
+    )
+    snapshot["columns"] = [
+        _serialize_quality_column_row(
+            item
+        )
+        for item in column_rows
+    ]
+
+    return snapshot
+
+
+def get_table_completeness(
+    table_name: str,
+    *,
+    history_limit: int = 12,
+):
+    table_name = validate_table_name(
+        table_name
+    )
+    ensure_internal_tables()
+
+    if not table_exists(table_name):
+        raise ValueError(
+            f"Tabel '{table_name}' "
+            "tidak ditemukan."
+        )
+
+    history_limit = max(
+        1,
+        min(int(history_limit), 50),
+    )
+    current_data_version = (
+        get_table_data_version(
+            table_name
+        )
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(
+                data_quality_snapshots_table
+            ).where(
+                data_quality_snapshots_table
+                .c.table_name
+                == table_name
+            ).order_by(
+                data_quality_snapshots_table
+                .c.id.desc()
+            ).limit(
+                history_limit
+            )
+        ).mappings().all()
+
+        stale_profile_count = int(
+            connection.execute(
+                select(
+                    func.count()
+                ).select_from(
+                    column_profiles_table
+                ).where(
+                    column_profiles_table
+                    .c.table_name
+                    == table_name,
+                    column_profiles_table
+                    .c.is_stale
+                    .is_(True),
+                )
+            ).scalar_one()
+            or 0
+        )
+
+    if not rows:
+        return {
+            "table_name":
+                table_name,
+            "profiled": False,
+            "freshness":
+                "not_profiled",
+            "current_data_version":
+                current_data_version,
+            "stale_profile_count":
+                stale_profile_count,
+            "current": None,
+            "previous": None,
+            "delta_completeness_pp":
+                None,
+            "history": [],
+        }
+
+    history = [
+        _serialize_quality_snapshot_row(
+            row
+        )
+        for row in rows
+    ]
+    current = get_completeness_snapshot(
+        history[0]["id"]
+    )
+    previous = (
+        history[1]
+        if len(history) > 1
+        else None
+    )
+
+    is_stale = (
+        int(
+            current[
+                "source_data_version"
+            ]
+        )
+        != int(current_data_version)
+        or stale_profile_count > 0
+    )
+
+    current["is_stale"] = bool(
+        is_stale
+    )
+    current[
+        "current_data_version"
+    ] = current_data_version
+
+    delta = None
+    if (
+        previous is not None
+        and current[
+            "completeness_score"
+        ] is not None
+        and previous[
+            "completeness_score"
+        ] is not None
+    ):
+        delta = round(
+            float(
+                current[
+                    "completeness_score"
+                ]
+            )
+            - float(
+                previous[
+                    "completeness_score"
+                ]
+            ),
+            2,
+        )
+
+    for item in history:
+        item["is_current_data_version"] = (
+            int(
+                item[
+                    "source_data_version"
+                ]
+            )
+            == int(
+                current_data_version
+            )
+        )
+
+    return {
+        "table_name":
+            table_name,
+        "profiled": True,
+        "freshness":
+            (
+                "stale"
+                if is_stale
+                else "current"
+            ),
+        "current_data_version":
+            current_data_version,
+        "stale_profile_count":
+            stale_profile_count,
+        "current": current,
+        "previous": previous,
+        "delta_completeness_pp":
+            delta,
+        "history": history,
+    }
+
+
 def mark_table_profile_stale(
     table_name: str,
     reason: str = "table_data_changed",
@@ -2105,6 +2939,459 @@ def get_recoverable_profile_jobs():
 
     return [int(job_id) for job_id in rows]
 
+
+
+# =====================================================
+# 6G.2 DUPLICATE DETECTION METADATA
+# =====================================================
+
+DUPLICATE_MODES = {
+    "exact_row",
+    "selected_key",
+}
+
+
+def _duplicate_ratio(value):
+    if value is None:
+        return None
+    return round(max(0.0, min(1.0, float(value))), 8)
+
+
+def _duplicate_pct(value):
+    if value is None:
+        return None
+    return round(float(value) * 100.0, 2)
+
+
+def _duplicate_severity(duplicate_rate):
+    if duplicate_rate is None:
+        return "unknown"
+    value = max(0.0, min(1.0, float(duplicate_rate)))
+    if value == 0:
+        return "clean"
+    if value <= 0.01:
+        return "low"
+    if value <= 0.05:
+        return "medium"
+    if value <= 0.15:
+        return "high"
+    return "critical"
+
+
+def _serialize_duplicate_job(row):
+    return {
+        "id": int(row["id"]),
+        "table_name": row["table_name"],
+        "mode": row["mode"],
+        "key_columns": list(row["key_columns"] or []),
+        "include_incomplete_keys": bool(row["include_incomplete_keys"]),
+        "max_groups": int(row["max_groups"] or 100),
+        "source_data_version": (
+            int(row["source_data_version"])
+            if row["source_data_version"] is not None
+            else None
+        ),
+        "status": row["status"],
+        "worker_backend": row["worker_backend"],
+        "created_at": row["created_at"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "error_message": row["error_message"],
+        "result_summary": row["result_summary"],
+    }
+
+
+def _serialize_duplicate_snapshot_row(row):
+    duplicate_rate = _duplicate_ratio(row["duplicate_rate"])
+    affected_rate = _duplicate_ratio(row["affected_rate"])
+    uniqueness_ratio = _duplicate_ratio(row["uniqueness_ratio"])
+    return {
+        "id": int(row["id"]),
+        "table_name": row["table_name"],
+        "job_id": int(row["job_id"]),
+        "mode": row["mode"],
+        "key_columns": list(row["key_columns"] or []),
+        "include_incomplete_keys": bool(row["include_incomplete_keys"]),
+        "source_data_version": int(row["source_data_version"]),
+        "row_count": int(row["row_count"] or 0),
+        "eligible_row_count": int(row["eligible_row_count"] or 0),
+        "ignored_incomplete_rows": int(row["ignored_incomplete_rows"] or 0),
+        "duplicate_group_count": int(row["duplicate_group_count"] or 0),
+        "duplicate_row_count": int(row["duplicate_row_count"] or 0),
+        "redundant_row_count": int(row["redundant_row_count"] or 0),
+        "duplicate_rate": duplicate_rate,
+        "duplicate_rate_pct": _duplicate_pct(duplicate_rate),
+        "affected_rate": affected_rate,
+        "affected_rate_pct": _duplicate_pct(affected_rate),
+        "uniqueness_ratio": uniqueness_ratio,
+        "uniqueness_score": _duplicate_pct(uniqueness_ratio),
+        "severity": row["severity"],
+        "created_at": row["created_at"],
+    }
+
+
+def _serialize_duplicate_group(row):
+    return {
+        "id": int(row["id"]),
+        "snapshot_id": int(row["snapshot_id"]),
+        "rank": int(row["rank"]),
+        "group_hash": row["group_hash"],
+        "preview": dict(row["preview"] or {}),
+        "row_count": int(row["row_count"] or 0),
+        "redundant_row_count": int(row["redundant_row_count"] or 0),
+    }
+
+
+def _normalize_duplicate_key_columns(table_name: str, key_columns: list[str] | None):
+    available = set(get_table_columns(table_name))
+    normalized = []
+    seen = set()
+    for raw in key_columns or []:
+        column = validate_column_name(raw)
+        if column not in available:
+            raise ValueError(
+                f"Kolom '{column}' tidak ditemukan pada tabel '{table_name}'."
+            )
+        if column in seen:
+            continue
+        normalized.append(column)
+        seen.add(column)
+    if not normalized:
+        raise ValueError("Selected Key membutuhkan minimal 1 kolom.")
+    if len(normalized) > 8:
+        raise ValueError("Selected Key maksimal menggunakan 8 kolom.")
+    return normalized
+
+
+def create_duplicate_job_record(
+    *,
+    table_name: str,
+    mode: str,
+    key_columns: list[str] | None = None,
+    include_incomplete_keys: bool = False,
+    max_groups: int = 100,
+):
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+    if not table_exists(table_name):
+        raise ValueError(f"Tabel '{table_name}' tidak ditemukan.")
+
+    mode = str(mode or "exact_row").strip().lower()
+    if mode not in DUPLICATE_MODES:
+        raise ValueError("mode harus 'exact_row' atau 'selected_key'.")
+
+    normalized_columns = (
+        _normalize_duplicate_key_columns(table_name, key_columns)
+        if mode == "selected_key"
+        else []
+    )
+    include_incomplete_keys = bool(include_incomplete_keys)
+    if mode == "exact_row":
+        include_incomplete_keys = True
+    max_groups = max(10, min(int(max_groups), 250))
+
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                {"lock_key": f"duplicate:{table_name}"},
+            )
+        active = connection.execute(
+            select(duplicate_jobs_table)
+            .where(
+                duplicate_jobs_table.c.table_name == table_name,
+                duplicate_jobs_table.c.status.in_(["queued", "running"]),
+            )
+            .order_by(duplicate_jobs_table.c.id.desc())
+        ).mappings().first()
+        if active is not None:
+            return _serialize_duplicate_job(active), False
+        result = connection.execute(
+            duplicate_jobs_table.insert().values(
+                table_name=table_name,
+                mode=mode,
+                key_columns=normalized_columns,
+                include_incomplete_keys=include_incomplete_keys,
+                max_groups=max_groups,
+                status="queued",
+                worker_backend="in_process_v1",
+            )
+        )
+        job_id = int(result.inserted_primary_key[0])
+        row = connection.execute(
+            select(duplicate_jobs_table).where(duplicate_jobs_table.c.id == job_id)
+        ).mappings().one()
+    return _serialize_duplicate_job(row), True
+
+
+def get_duplicate_job(job_id: int):
+    ensure_internal_tables()
+    job_id = int(job_id)
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(duplicate_jobs_table).where(duplicate_jobs_table.c.id == job_id)
+        ).mappings().one_or_none()
+    if row is None:
+        raise ValueError("Duplicate detection job tidak ditemukan.")
+    return _serialize_duplicate_job(row)
+
+
+def get_duplicate_jobs(*, table_name: str | None = None, limit: int = 50):
+    ensure_internal_tables()
+    limit = max(1, min(int(limit), 200))
+    statement = select(duplicate_jobs_table)
+    if table_name:
+        table_name = validate_table_name(table_name)
+        statement = statement.where(duplicate_jobs_table.c.table_name == table_name)
+    statement = statement.order_by(duplicate_jobs_table.c.id.desc()).limit(limit)
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+    return [_serialize_duplicate_job(row) for row in rows]
+
+
+def claim_duplicate_job(job_id: int):
+    ensure_internal_tables()
+    job_id = int(job_id)
+    with engine.begin() as connection:
+        result = connection.execute(
+            duplicate_jobs_table.update()
+            .where(
+                duplicate_jobs_table.c.id == job_id,
+                duplicate_jobs_table.c.status == "queued",
+            )
+            .values(
+                status="running",
+                started_at=func.now(),
+                finished_at=None,
+                error_message=None,
+            )
+        )
+        if not result.rowcount:
+            return None
+        row = connection.execute(
+            select(duplicate_jobs_table).where(duplicate_jobs_table.c.id == job_id)
+        ).mappings().one()
+    return _serialize_duplicate_job(row)
+
+
+def update_duplicate_job_record(
+    job_id: int,
+    *,
+    status: str,
+    source_data_version: int | None = None,
+    result_summary: dict | None = None,
+    error_message: str | None = None,
+):
+    ensure_internal_tables()
+    job_id = int(job_id)
+    status = str(status).strip().lower()
+    if status not in DUPLICATE_JOB_STATUSES:
+        raise ValueError("Status duplicate detection job tidak valid.")
+    values = {"status": status}
+    if source_data_version is not None:
+        values["source_data_version"] = int(source_data_version)
+    if status == "running":
+        values.update(started_at=func.now(), finished_at=None, error_message=None)
+    elif status in {"completed", "failed"}:
+        values["finished_at"] = func.now()
+    if result_summary is not None:
+        values["result_summary"] = result_summary
+    if error_message is not None:
+        values["error_message"] = str(error_message)[:8000]
+    with engine.begin() as connection:
+        result = connection.execute(
+            duplicate_jobs_table.update()
+            .where(duplicate_jobs_table.c.id == job_id)
+            .values(**values)
+        )
+        if not result.rowcount:
+            raise ValueError("Duplicate detection job tidak ditemukan.")
+    return get_duplicate_job(job_id)
+
+
+def get_recoverable_duplicate_jobs():
+    ensure_internal_tables()
+    with engine.begin() as connection:
+        connection.execute(
+            duplicate_jobs_table.update()
+            .where(duplicate_jobs_table.c.status == "running")
+            .values(
+                status="queued",
+                started_at=None,
+                finished_at=None,
+                error_message="Worker restart terdeteksi; job diantrikan kembali.",
+            )
+        )
+        rows = connection.execute(
+            select(duplicate_jobs_table.c.id)
+            .where(duplicate_jobs_table.c.status == "queued")
+            .order_by(duplicate_jobs_table.c.id)
+        ).scalars().all()
+    return [int(job_id) for job_id in rows]
+
+
+def register_duplicate_snapshot(
+    *,
+    table_name: str,
+    job_id: int,
+    mode: str,
+    key_columns: list[str] | None,
+    include_incomplete_keys: bool,
+    source_data_version: int,
+    row_count: int,
+    eligible_row_count: int,
+    ignored_incomplete_rows: int,
+    duplicate_group_count: int,
+    duplicate_row_count: int,
+    redundant_row_count: int,
+    groups: list[dict] | None = None,
+):
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+    row_count = max(0, int(row_count or 0))
+    eligible_row_count = max(0, int(eligible_row_count or 0))
+    ignored_incomplete_rows = max(0, int(ignored_incomplete_rows or 0))
+    duplicate_group_count = max(0, int(duplicate_group_count or 0))
+    duplicate_row_count = max(0, int(duplicate_row_count or 0))
+    redundant_row_count = max(0, int(redundant_row_count or 0))
+
+    duplicate_rate = (
+        float(redundant_row_count) / float(eligible_row_count)
+        if eligible_row_count > 0
+        else 0.0
+    )
+    affected_rate = (
+        float(duplicate_row_count) / float(eligible_row_count)
+        if eligible_row_count > 0
+        else 0.0
+    )
+    uniqueness_ratio = 1.0 - duplicate_rate
+
+    values = {
+        "table_name": table_name,
+        "job_id": int(job_id),
+        "mode": str(mode)[:24],
+        "key_columns": list(key_columns or []),
+        "include_incomplete_keys": bool(include_incomplete_keys),
+        "source_data_version": int(source_data_version),
+        "row_count": row_count,
+        "eligible_row_count": eligible_row_count,
+        "ignored_incomplete_rows": ignored_incomplete_rows,
+        "duplicate_group_count": duplicate_group_count,
+        "duplicate_row_count": duplicate_row_count,
+        "redundant_row_count": redundant_row_count,
+        "duplicate_rate": _duplicate_ratio(duplicate_rate),
+        "affected_rate": _duplicate_ratio(affected_rate),
+        "uniqueness_ratio": _duplicate_ratio(uniqueness_ratio),
+        "severity": _duplicate_severity(duplicate_rate),
+    }
+
+    with engine.begin() as connection:
+        existing = connection.execute(
+            select(duplicate_snapshots_table).where(
+                duplicate_snapshots_table.c.job_id == int(job_id)
+            )
+        ).mappings().one_or_none()
+        if existing is not None:
+            snapshot_id = int(existing["id"])
+        else:
+            result = connection.execute(duplicate_snapshots_table.insert().values(**values))
+            snapshot_id = int(result.inserted_primary_key[0])
+            normalized_groups = []
+            for index, raw in enumerate(groups or [], start=1):
+                group_hash = str(raw.get("group_hash") or "").strip()
+                if not group_hash:
+                    continue
+                normalized_groups.append({
+                    "snapshot_id": snapshot_id,
+                    "rank": int(raw.get("rank") or index),
+                    "group_hash": group_hash[:64],
+                    "preview": dict(raw.get("preview") or {}),
+                    "row_count": max(0, int(raw.get("row_count") or 0)),
+                    "redundant_row_count": max(0, int(raw.get("redundant_row_count") or 0)),
+                })
+            if normalized_groups:
+                connection.execute(duplicate_groups_table.insert(), normalized_groups)
+    return get_duplicate_snapshot(snapshot_id)
+
+
+def get_duplicate_snapshot(snapshot_id: int):
+    ensure_internal_tables()
+    snapshot_id = int(snapshot_id)
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(duplicate_snapshots_table).where(
+                duplicate_snapshots_table.c.id == snapshot_id
+            )
+        ).mappings().one_or_none()
+        if row is None:
+            raise ValueError("Duplicate snapshot tidak ditemukan.")
+        group_rows = connection.execute(
+            select(duplicate_groups_table)
+            .where(duplicate_groups_table.c.snapshot_id == snapshot_id)
+            .order_by(duplicate_groups_table.c.rank)
+        ).mappings().all()
+    result = _serialize_duplicate_snapshot_row(row)
+    result["groups"] = [_serialize_duplicate_group(item) for item in group_rows]
+    return result
+
+
+def get_table_duplicate_overview(table_name: str, *, history_limit: int = 12):
+    table_name = validate_table_name(table_name)
+    ensure_internal_tables()
+    if not table_exists(table_name):
+        raise ValueError(f"Tabel '{table_name}' tidak ditemukan.")
+    history_limit = max(1, min(int(history_limit), 50))
+    current_data_version = get_table_data_version(table_name)
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(duplicate_snapshots_table)
+            .where(duplicate_snapshots_table.c.table_name == table_name)
+            .order_by(duplicate_snapshots_table.c.id.desc())
+            .limit(history_limit)
+        ).mappings().all()
+
+    if not rows:
+        return {
+            "table_name": table_name,
+            "checked": False,
+            "current_data_version": current_data_version,
+            "latest": None,
+            "latest_exact": None,
+            "latest_selected_key": None,
+            "history": [],
+        }
+
+    history = [_serialize_duplicate_snapshot_row(row) for row in rows]
+    for item in history:
+        item["freshness"] = (
+            "current"
+            if int(item["source_data_version"]) == int(current_data_version)
+            else "stale"
+        )
+
+    latest_row = history[0]
+    latest = get_duplicate_snapshot(latest_row["id"])
+    latest["freshness"] = latest_row["freshness"]
+
+    exact_row = next((item for item in history if item["mode"] == "exact_row"), None)
+    selected_key = next((item for item in history if item["mode"] == "selected_key"), None)
+    latest_exact = get_duplicate_snapshot(exact_row["id"]) if exact_row else None
+    latest_selected_key = get_duplicate_snapshot(selected_key["id"]) if selected_key else None
+    if latest_exact is not None:
+        latest_exact["freshness"] = exact_row["freshness"]
+    if latest_selected_key is not None:
+        latest_selected_key["freshness"] = selected_key["freshness"]
+
+    return {
+        "table_name": table_name,
+        "checked": True,
+        "current_data_version": current_data_version,
+        "latest": latest,
+        "latest_exact": latest_exact,
+        "latest_selected_key": latest_selected_key,
+        "history": history,
+    }
 
 
 # =====================================================
@@ -3172,7 +4459,84 @@ def drop_warehouse_table(table_name: str):
                 result.rowcount or 0
             )
 
+        quality_snapshot_ids = [
+            int(value)
+            for value in connection.execute(
+                select(
+                    data_quality_snapshots_table
+                    .c.id
+                ).where(
+                    data_quality_snapshots_table
+                    .c.table_name
+                    == table_name
+                )
+            ).scalars().all()
+        ]
+
+        duplicate_snapshot_ids = [
+            int(value)
+            for value in connection.execute(
+                select(
+                    duplicate_snapshots_table.c.id
+                ).where(
+                    duplicate_snapshots_table.c.table_name
+                    == table_name
+                )
+            ).scalars().all()
+        ]
+
+        deleted_quality_columns = 0
+        deleted_duplicate_groups = 0
+
+        if quality_snapshot_ids:
+            result = connection.execute(
+                delete(
+                    data_quality_columns_table
+                ).where(
+                    data_quality_columns_table
+                    .c.snapshot_id.in_(
+                        quality_snapshot_ids
+                    )
+                )
+            )
+            deleted_quality_columns = int(
+                result.rowcount or 0
+            )
+
+        if duplicate_snapshot_ids:
+            result = connection.execute(
+                delete(duplicate_groups_table).where(
+                    duplicate_groups_table.c.snapshot_id.in_(
+                        duplicate_snapshot_ids
+                    )
+                )
+            )
+            deleted_duplicate_groups = int(result.rowcount or 0)
+
         metadata_results = {
+            "duplicate_groups": deleted_duplicate_groups,
+            "duplicate_snapshots": connection.execute(
+                delete(duplicate_snapshots_table).where(
+                    duplicate_snapshots_table.c.table_name == table_name
+                )
+            ).rowcount,
+            "duplicate_jobs": connection.execute(
+                delete(duplicate_jobs_table).where(
+                    duplicate_jobs_table.c.table_name == table_name
+                )
+            ).rowcount,
+            "data_quality_columns":
+                deleted_quality_columns,
+            "data_quality_snapshots":
+                connection.execute(
+                    delete(
+                        data_quality_snapshots_table
+                    ).where(
+                        data_quality_snapshots_table
+                        .c.table_name
+                        == table_name
+                    )
+                ).rowcount,
             "output_lineage": connection.execute(
                 delete(output_lineage_table).where(output_lineage_table.c.output_table == table_name)
             ).rowcount,
@@ -3217,6 +4581,29 @@ def drop_warehouse_table(table_name: str):
                 )
             ).rowcount,
         }
+
+        # Remove pivot registry/lineage within the same table-drop transaction.
+        connection.execute(delete(pivot_tables_table).where(
+            pivot_tables_table.c.table_name == table_name
+        ))
+        connection.execute(delete(pivot_columns_table).where(
+            pivot_columns_table.c.table_name == table_name
+        ))
+        connection.execute(delete(pivot_upload_log_table).where(
+            pivot_upload_log_table.c.table_name == table_name
+        ))
+
+        # Cleanup calculated-column lineage and stale tracking. Without this,
+        # recreating a table under the same name could inherit obsolete formulas.
+        for calc_meta in (
+            CALCULATED_COLUMN_STATE_TABLE_NAME,
+            CALCULATED_COLUMNS_TABLE_NAME,
+        ):
+            if inspect(connection).has_table(calc_meta):
+                connection.execute(
+                    text(f'DELETE FROM "{calc_meta}" WHERE table_name = :name'),
+                    {"name": table_name},
+                )
 
         quoted_table = (
             '"'
@@ -3972,6 +5359,28 @@ def rename_table_column(
     ensure_internal_tables()
 
     with engine.begin() as connection:
+        # Prevent renaming a calculated output or any column referenced by a
+        # stored formula. Otherwise SQL remains valid but the formula metadata
+        # becomes broken and the refresh operation cannot be trusted.
+        if inspect(connection).has_table(CALCULATED_COLUMNS_TABLE_NAME):
+            from services.calculated_column_tracking_service import references
+            formulas = connection.execute(
+                text(
+                    "SELECT column_name, formula FROM warehouse_calculated_columns "
+                    "WHERE table_name = :table_name"
+                ),
+                {"table_name": table_name},
+            ).mappings().all()
+            used_by = [
+                row["column_name"] for row in formulas
+                if old_name == row["column_name"] or old_name in references(row["formula"])
+            ]
+            if used_by:
+                raise ValueError(
+                    f"Kolom '{old_name}' digunakan oleh calculated column "
+                    f"({', '.join(used_by)}). Ubah dependensi/formula terlebih dahulu "
+                    "sebelum mengganti nama kolom."
+                )
         connection.execute(
             text(
                 f"ALTER TABLE {quoted_table} "

@@ -3,6 +3,8 @@ import { Button, NumberField } from '@vibe/core'
 import {
   detectExcelSheets,
   previewExcel,
+  previewPivotExcel,
+  savePivotExcel,
   saveExcel,
   getTables,
   getBanks,
@@ -30,6 +32,7 @@ import {
 import CaffeineDropdown from '../components/ui/CaffeineDropdown'
 import DashboardLayout from '../layouts/DashboardLayout'
 import '../styles/upload-vibe.css'
+import '../styles/upload-smart-pivot.css'
 
 const months = [
   { value: 1, label: 'Januari' },
@@ -148,6 +151,14 @@ function UploadData() {
   const [headerRow, setHeaderRow] = useState(1)
   const [firstDataRow, setFirstDataRow] = useState(1)
 
+  const [uploadPath, setUploadPath] = useState('standard')
+  const [pivotPreview, setPivotPreview] = useState(null)
+  const [pivotBusy, setPivotBusy] = useState(false)
+  const [pivotSaving, setPivotSaving] = useState(false)
+  const [pivotSaveResult, setPivotSaveResult] = useState(null)
+  const [pivotError, setPivotError] = useState('')
+  const [pivotCodeColumn, setPivotCodeColumn] = useState('')
+  const [pivotValueColumn, setPivotValueColumn] = useState('')
   const [previewData, setPreviewData] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [message, setMessage] = useState('')
@@ -165,6 +176,124 @@ function UploadData() {
   const [existingTables, setExistingTables] = useState([])
   const [loadingTables, setLoadingTables] = useState(false)
   const [tableLoadError, setTableLoadError] = useState('')
+
+  useEffect(() => {
+    setPivotPreview(null)
+    setPivotSaveResult(null)
+    setPivotError('')
+  }, [
+    file,
+    selectedSheet,
+    selectedBankName,
+    month,
+    year,
+    pivotCodeColumn,
+    pivotValueColumn,
+    tableName,
+    tableMode,
+  ])
+
+  async function handlePivotPreview() {
+    if (!file || !selectedSheet || !selectedBankName) {
+      setPivotError('Pilih file, sheet, dan bank sebelum melakukan pivot.')
+      return
+    }
+
+    if (
+      (pivotCodeColumn === '') !== (pivotValueColumn === '')
+    ) {
+      setPivotError('Pilih kedua kolom Sandi dan Jumlah, atau gunakan Auto Detect.')
+      return
+    }
+
+    setPivotBusy(true)
+    setPivotError('')
+    setPivotPreview(null)
+
+    try {
+      const result = await previewPivotExcel({
+        file,
+        sheetName: selectedSheet,
+        bankName: selectedBankName,
+        month: Number(month),
+        year: Number(year),
+        codeColumn:
+          pivotCodeColumn === ''
+            ? null
+            : Number(pivotCodeColumn),
+        valueColumn:
+          pivotValueColumn === ''
+            ? null
+            : Number(pivotValueColumn),
+      })
+      setPivotPreview(result)
+    } catch (error) {
+      setPivotError(
+        error.message || 'Smart Pivot Preview gagal.',
+      )
+    } finally {
+      setPivotBusy(false)
+    }
+  }
+
+  async function handlePivotSave() {
+    if (!file || !pivotPreview?.ready) {
+      setPivotError('Buat preview yang valid sebelum menyimpan data.');
+      return;
+    }
+    if (!tableName.trim()) {
+      setPivotError('Isi nama tabel tujuan terlebih dahulu.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]{1,63}$/.test(tableName.trim())) {
+      setPivotError('Nama tabel maksimal 63 karakter; gunakan huruf, angka, underscore.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Simpan Smart Pivot ke PostgreSQL?\n\n` +
+      `Tabel: ${tableName.trim()}\nBank: ${selectedBankName}\n` +
+      `Periode: ${selectedMonthLabel} ${year}\n` +
+      `Kolom Sandi: ${pivotPreview.total_accounts}\n\n` +
+      `Jika tabel belum ada, tabel pivot baru akan dibuat.`,
+    );
+    if (!confirmed) return;
+    setPivotSaving(true);
+    setPivotError('');
+    setPivotSaveResult(null);
+    const args = {
+      file,
+      sheetName: selectedSheet,
+      bankName: selectedBankName,
+      month: Number(month),
+      year: Number(year),
+      tableName: tableName.trim(),
+      tableMode,
+      codeColumn: pivotCodeColumn === '' ? null : Number(pivotCodeColumn),
+      valueColumn: pivotValueColumn === '' ? null : Number(pivotValueColumn),
+    };
+    try {
+      let result;
+      try {
+        result = await savePivotExcel(args);
+      } catch (error) {
+        if (error.code !== 'PIVOT_PERIOD_EXISTS') throw error;
+        const replace = window.confirm(
+          `Periode ${selectedMonthLabel} ${year} untuk ${selectedBankName} ` +
+          `sudah tersedia pada ${tableName}.\n\n` +
+          `Ganti 1 baris data periode lama dengan upload baru?\n` +
+          `Kolom akun yang tidak muncul pada upload baru akan menjadi NULL.`,
+        );
+        if (!replace) return;
+        result = await savePivotExcel({ ...args, duplicateAction: 'replace' });
+      }
+      setPivotSaveResult(result);
+      await loadExistingTables({ silent: true });
+    } catch (error) {
+      setPivotError(error.message || 'Gagal menyimpan Smart Pivot.');
+    } finally {
+      setPivotSaving(false);
+    }
+  }
 
   const fileSize = useMemo(() => {
     if (!file) return ''
@@ -432,6 +561,10 @@ function UploadData() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (uploadPath === 'pivot') {
+      await handlePivotPreview()
+      return
+    }
 
     if (!file) {
       showMessage('Silakan pilih file XLS/XLSX terlebih dahulu.', 'warning')
@@ -789,6 +922,36 @@ function UploadData() {
             <span>{message}</span>
           </div>
         )}
+
+        <section className="tp-smart-pivot-mode">
+          <div>
+            <div className="tp-smart-pivot-eyebrow">
+              DATA INGESTION
+            </div>
+            <h2>Upload Format</h2>
+            <p>
+              Standard mempertahankan alur upload yang sudah ada.
+              Smart Pivot mengubah daftar Sandi/Jumlah menjadi preview satu
+              baris per bank dan periode tanpa menyimpan data.
+            </p>
+          </div>
+          <div className="tp-smart-pivot-mode-actions">
+            <button
+              type="button"
+              className={uploadPath === 'standard' ? 'is-active' : ''}
+              onClick={() => setUploadPath('standard')}
+            >
+              Standard Upload
+            </button>
+            <button
+              type="button"
+              className={uploadPath === 'pivot' ? 'is-active' : ''}
+              onClick={() => setUploadPath('pivot')}
+            >
+              Smart Pivot Preview
+            </button>
+          </div>
+        </section>
 
         <form
           onSubmit={handleSubmit}
@@ -1275,12 +1438,224 @@ function UploadData() {
                   <UploadCloud size={16} />
                 )}
 
-                {processing ? 'Memproses...' : 'Proses & Preview Data'}
+                {processing ? 'Memproses...' : uploadPath === 'pivot' ? 'Smart Pivot Preview' : 'Proses & Preview Data'}
               </span>
             </Button>
           </div>
         </form>
-        {previewData && (
+        {uploadPath === 'pivot' && (
+          <section className="tp-smart-pivot-panel">
+            <div className="tp-smart-pivot-header">
+              <div>
+                <div className="tp-smart-pivot-eyebrow">7A.2.2.2 · PIVOT WAREHOUSE STORAGE</div>
+                <h2>Row-to-Column Transformation</h2>
+                <p>
+                  Kode Sandi menjadi header <code>sandi_XXXXXXXXXX</code>;
+                  nilai Jumlah menjadi isi kolom. Preview terlebih dahulu, lalu
+                  simpan ke tabel PostgreSQL setelah hasil divalidasi.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tp-smart-pivot-action"
+                disabled={pivotBusy || processing || !file || !selectedSheet || !selectedBankName}
+                onClick={handlePivotPreview}
+              >
+                {pivotBusy ? 'Memproses...' : 'Generate Pivot Preview'}
+              </button>
+            </div>
+
+            <div className="tp-smart-pivot-controls">
+              <label>
+                Sandi / Account Code
+                <select
+                  value={pivotCodeColumn}
+                  onChange={(event) => setPivotCodeColumn(event.target.value)}
+                >
+                  <option value="">Auto detect</option>
+                  {(pivotPreview?.excel_columns ||
+                    Array.from({ length: 26 }, (_, index) => ({
+                      index,
+                      label: `Kolom ${index + 1}`,
+                    }))).map((column) => (
+                    <option key={column.index} value={column.index}>
+                      {column.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Jumlah / Value
+                <select
+                  value={pivotValueColumn}
+                  onChange={(event) => setPivotValueColumn(event.target.value)}
+                >
+                  <option value="">Auto detect</option>
+                  {(pivotPreview?.excel_columns ||
+                    Array.from({ length: 26 }, (_, index) => ({
+                      index,
+                      label: `Kolom ${index + 1}`,
+                    }))).map((column) => (
+                    <option key={column.index} value={column.index}>
+                      {column.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>Untuk laporan 0100 yang memiliki header Sandi/Jumlah berulang,
+                mode otomatis akan membaca seluruh blok pada satu sheet.</p>
+            </div>
+
+            {pivotError && (
+              <div className="tp-smart-pivot-error">{pivotError}</div>
+            )}
+
+            {pivotPreview && (
+              <>
+                <div className="tp-smart-pivot-summary">
+                  <div><span>Bank</span><strong>{pivotPreview.bank_name || selectedBankName}</strong></div>
+                  <div><span>Periode</span><strong>{selectedMonthLabel} {year}</strong></div>
+                  <div><span>Account Columns</span><strong>{pivotPreview.total_accounts || 0}</strong></div>
+                  <div><span>Issues</span><strong>{pivotPreview.issue_count ?? pivotPreview.issues?.length ?? 0}</strong></div>
+                  <div><span>Validation</span><strong>{pivotPreview.ready ? 'Valid' : 'Needs review'}</strong></div>
+                </div>
+
+                <div className="tp-smart-pivot-savebar">
+                  <div>
+                    <strong>Warehouse Storage</strong>
+                    <p>
+                      Tabel tujuan: <code>{tableName || 'belum dipilih'}</code>.
+                      {tableMode === 'new'
+                        ? ' Buat tabel pivot baru.'
+                        : ' Tambahkan periode ke tabel pivot yang sudah ada.'}
+                      {' '}Kode Sandi baru akan menjadi kolom baru.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="tp-smart-pivot-action"
+                    disabled={!pivotPreview.ready || !tableName.trim() || pivotBusy || pivotSaving}
+                    onClick={handlePivotSave}
+                  >
+                    {pivotSaving ? 'Menyimpan...' : 'Save Pivot to Warehouse'}
+                  </button>
+                </div>
+                {pivotSaveResult && (
+                  <div className="tp-smart-pivot-success">
+                    <strong>Berhasil disimpan:</strong>{' '}
+                    {pivotSaveResult.table_name} · 1 baris ·
+                    {' '}{pivotSaveResult.new_column_count} kolom baru ·
+                    {' '}{pivotSaveResult.replaced_rows ? 'periode diganti' : 'periode ditambahkan'}.
+                  </div>
+                )}
+                <p className={`tp-smart-pivot-status ${pivotPreview.ready ? 'is-valid' : 'is-invalid'}`}>
+                  {pivotPreview.ready
+                    ? 'Preview tervalidasi. Simpan jika angka telah dicocokkan dengan Excel sumber.'
+                    : pivotPreview.message}
+                </p>
+
+                {pivotPreview.issues?.length > 0 && (
+                  <div className="tp-smart-pivot-issues">
+                    <strong>Validation Issues</strong>
+                    {pivotPreview.issues.map((issue, index) => (
+                      <div key={`${issue.row}-${index}`}>
+                        Baris {issue.row ?? '-'}: {issue.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {pivotPreview.accounts?.length > 0 && (
+                  <div className="tp-smart-pivot-result">
+                    <div className="tp-smart-pivot-result-heading">
+                      <strong>Column Mapping Preview</strong>
+                      <span>
+                        {pivotPreview.accounts.length} Sandi → output columns ·{' '}
+                        {pivotPreview.empty_amount_accounts || 0} nilai kosong dipertahankan
+                      </span>
+                    </div>
+                    {pivotPreview.wide_preview && (
+                      <div className="tp-smart-pivot-wide">
+                        <div className="tp-smart-pivot-result-heading">
+                          <strong>Wide Format Preview — 1 row</strong>
+                          <span>
+                            Menampilkan 15 kolom pertama dari{' '}
+                            {pivotPreview.output_columns?.length || 0} kolom.
+                          </span>
+                        </div>
+                        <div className="tp-smart-pivot-table-scroll">
+                          <table>
+                            <thead>
+                              <tr>
+                                {(pivotPreview.output_columns || [])
+                                  .slice(0, 15)
+                                  .map((column) => (
+                                    <th key={column}>
+                                      <code>{column}</code>
+                                    </th>
+                                  ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                {(pivotPreview.output_columns || [])
+                                  .slice(0, 15)
+                                  .map((column) => (
+                                    <td key={column}>
+                                      {String(
+                                        pivotPreview.wide_preview[column] ?? '—',
+                                      )}
+                                    </td>
+                                  ))}
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    <div className="tp-smart-pivot-result-heading">
+                      <strong>Account-to-Column Trace</strong>
+                      <span>Sumber baris dan deskripsi akun</span>
+                    </div>
+                    <div className="tp-smart-pivot-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Source Row</th>
+                            <th>Sandi</th>
+                            <th>Output Column</th>
+                            <th>Account Description</th>
+                            <th>Jumlah</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pivotPreview.accounts.map((account) => (
+                            <tr key={`${account.code}-${account.source_row}`}>
+                              <td>{account.source_row}</td>
+                              <td><code>{account.code}</code></td>
+                              <td><code>{account.column_name}</code></td>
+                              <td>{account.description || '—'}</td>
+                              <td className="tp-smart-pivot-number">
+                                {account.value === null ? 'NULL (kosong)' : String(account.value)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="tp-smart-pivot-foot">
+                      Output: <code>bank_id</code>, <code>bulan</code>, <code>tahun</code>
+                      + {pivotPreview.accounts.length} kolom Sandi.
+                      Satu baris hasil pivot untuk bank dan periode terpilih.
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {uploadPath === 'standard' && previewData && (
           <section className="tp-upload-preview overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="border-b border-slate-100 p-5">
               <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">

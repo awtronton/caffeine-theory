@@ -91,50 +91,56 @@ def clean_value(value):
     return value
 
 
-def clean_dataframe(
-    df,
-    month,
-    year
-):
+def _empty_cell(value):
+    """Empty means NULL/NaN or whitespace, never numeric zero."""
+    if value is None:
+        return True
+    try:
+        if bool(pd.isna(value)):
+            return True
+    except (ValueError, TypeError):
+        pass
+    return isinstance(value, str) and not value.strip()
+
+
+def _generated_empty_header(value):
+    """Pandas assigns 'Unnamed: N' to physically blank Excel headers."""
+    if _empty_cell(value):
+        return True
+    return bool(re.fullmatch(r"Unnamed: \d+(?:_level_\d+)?", str(value)))
+
+
+def clean_dataframe(df, month, year):
+    """Keep declared header columns even when their values are all empty.
+
+    Remove a row only when all *data* cells are genuinely empty. Remove a
+    column only when its Excel header is missing AND all data cells are empty.
+    Numeric 0 is always a valid data value.
     """
-    Membersihkan dataframe dan
-    menambahkan metadata periode.
-    """
+    df = df.copy()
 
-    # hapus row kosong
-    df = df.dropna(
-        how="all"
-    )
-
-    # hapus column kosong
-    df = df.dropna(
-        axis=1,
-        how="all"
-    )
-
-    # clean column names
-    columns = [
-        clean_column_name(column)
-        for column in df.columns
+    # Header-only columns have schema meaning even when all values are NULL.
+    # Do not use df.dropna(axis=1, how='all') here.
+    drop_columns = [
+        col for col in df.columns
+        if _generated_empty_header(col)
+        and df[col].map(_empty_cell).all()
     ]
+    if drop_columns:
+        df = df.drop(columns=drop_columns)
 
-    columns = make_unique_columns(
-        columns
-    )
+    # A completely empty row has no data; rows with any 0 are preserved.
+    keep_rows = ~df.apply(lambda row: all(_empty_cell(v) for v in row), axis=1)
+    df = df.loc[keep_rows].copy().reset_index(drop=True)
 
-    df.columns = columns
+    columns = [clean_column_name(column) for column in df.columns]
+    df.columns = make_unique_columns(columns)
 
-    # clean values
     for column in df.columns:
+        df[column] = df[column].map(clean_value)
 
-        df[column] = df[column].apply(
-            clean_value
-        )
-
-    # metadata periode
-    df["bulan"] = int(month)
-    df["tahun"] = int(year)
-
+    df['bulan'] = int(month)
+    df['tahun'] = int(year)
     return df
 
 
